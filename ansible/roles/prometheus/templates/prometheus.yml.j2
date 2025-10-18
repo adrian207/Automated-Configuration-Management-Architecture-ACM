@@ -1,0 +1,89 @@
+# Prometheus Configuration
+# Author: Adrian Johnson <adrian207@gmail.com>
+# Managed by Ansible - DO NOT EDIT MANUALLY
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: '{{ environment }}-config-mgmt'
+    environment: '{{ environment }}'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - 'alertmanager-01.{{ domain }}:9093'
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - 'rules/*.yml'
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Vault cluster monitoring
+  - job_name: 'vault'
+    metrics_path: '/v1/sys/metrics'
+    params:
+      format: ['prometheus']
+    static_configs:
+      - targets:
+{% for host in groups['vault_cluster'] %}
+          - '{{ hostvars[host]['ansible_host'] }}:8200'
+{% endfor %}
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__address__]
+        regex: '([^:]+).*'
+        target_label: vault_node
+
+  # Node exporters (Linux systems)
+  - job_name: 'node'
+    file_sd_configs:
+      - files:
+          - 'targets/linux-nodes.json'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [job]
+        target_label: job
+
+  # PostgreSQL exporter
+  - job_name: 'postgres'
+    static_configs:
+      - targets:
+{% for host in groups['postgresql_cluster'] %}
+          - '{{ hostvars[host]['ansible_host'] }}:9187'
+{% endfor %}
+
+  # Grafana monitoring
+  - job_name: 'grafana'
+    static_configs:
+      - targets:
+{% for host in groups['grafana_servers'] %}
+          - '{{ hostvars[host]['ansible_host'] }}:3000'
+{% endfor %}
+
+  # Alertmanager monitoring
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets:
+          - 'alertmanager-01.{{ domain }}:9093'
+
+  # Windows exporter (WMI exporter)
+  - job_name: 'windows'
+    file_sd_configs:
+      - files:
+          - 'targets/windows-nodes.json'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+
+

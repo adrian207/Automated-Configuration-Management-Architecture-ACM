@@ -1,0 +1,76 @@
+---
+# Linux Node Configuration Playbook
+# Author: Adrian Johnson <adrian207@gmail.com>
+# Description: Configures Linux nodes for Ansible management and installs monitoring agents
+
+- name: Configure Linux Managed Nodes
+  hosts: linux_nodes
+  become: true
+  tasks:
+    - name: Update package cache
+      ansible.builtin.package:
+        update_cache: true
+      when: ansible_os_family in ['Debian', 'RedHat']
+
+    - name: Install base packages
+      ansible.builtin.package:
+        name:
+          - vim
+          - curl
+          - wget
+          - git
+          - htop
+          - net-tools
+          - python3
+          - python3-pip
+        state: present
+
+    - name: Create ansible user
+      ansible.builtin.user:
+        name: ansible
+        comment: Ansible Management User
+        shell: /bin/bash
+        groups: wheel
+        append: true
+        create_home: true
+
+    - name: Set up sudo for ansible user
+      ansible.builtin.copy:
+        content: "ansible ALL=(ALL) NOPASSWD: ALL\n"
+        dest: /etc/sudoers.d/ansible
+        mode: '0440'
+        validate: /usr/sbin/visudo -cf %s
+
+    - name: Install Node Exporter
+      ansible.builtin.include_role:
+        name: node_exporter
+
+    - name: Configure firewall for monitoring
+      ansible.posix.firewalld:
+        port: "{{ item }}/tcp"
+        permanent: true
+        state: enabled
+        immediate: true
+      loop:
+        - 9100  # Node Exporter
+      when: ansible_os_family == 'RedHat'
+      ignore_errors: true
+
+- name: Register Linux Nodes with Prometheus
+  hosts: prometheus_servers
+  become: true
+  tasks:
+    - name: Add Linux nodes to Prometheus targets
+      ansible.builtin.lineinfile:
+        path: /etc/prometheus/targets/linux-nodes.json
+        line: '  {"targets": ["{{ item }}:9100"], "labels": {"job": "node", "env": "{{ environment }}"}},'
+        insertbefore: '^]$'
+        create: true
+      loop: "{{ groups['linux_nodes'] | map('extract', hostvars, 'ansible_host') | list }}"
+
+    - name: Reload Prometheus configuration
+      ansible.builtin.systemd:
+        name: prometheus
+        state: reloaded
+
+

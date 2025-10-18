@@ -1,0 +1,85 @@
+---
+# Monitoring Tier Deployment Playbook
+# Author: Adrian Johnson <adrian207@gmail.com>
+# Description: Deploys Prometheus, Grafana, and Alertmanager
+
+- name: Deploy Prometheus
+  hosts: prometheus_servers
+  become: true
+  roles:
+    - common
+    - prometheus
+  tags:
+    - prometheus
+
+- name: Deploy Grafana
+  hosts: grafana_servers
+  become: true
+  roles:
+    - common
+    - grafana
+  tags:
+    - grafana
+
+- name: Deploy Alertmanager
+  hosts: alertmanager-01.{{ domain }}
+  become: true
+  roles:
+    - common
+    - alertmanager
+  tags:
+    - alertmanager
+
+- name: Configure Grafana Data Sources
+  hosts: grafana_servers
+  become: true
+  tasks:
+    - name: Add Prometheus data source to Grafana
+      community.grafana.grafana_datasource:
+        name: Prometheus
+        ds_type: prometheus
+        ds_url: "http://{{ hostvars['prometheus-01.' + domain]['ansible_host'] }}:9090"
+        access: proxy
+        is_default: true
+        grafana_url: "http://localhost:3000"
+        grafana_user: "{{ grafana_admin_user }}"
+        grafana_password: "{{ grafana_admin_password }}"
+        state: present
+
+- name: Import Grafana Dashboards
+  hosts: grafana_servers
+  become: true
+  tasks:
+    - name: Import Node Exporter dashboard
+      community.grafana.grafana_dashboard:
+        grafana_url: "http://localhost:3000"
+        grafana_user: "{{ grafana_admin_user }}"
+        grafana_password: "{{ grafana_admin_password }}"
+        state: present
+        commit_message: "Import Node Exporter dashboard"
+        overwrite: true
+        dashboard_id: 1860
+        dashboard_revision: 27
+
+    - name: Import Vault dashboard
+      community.grafana.grafana_dashboard:
+        grafana_url: "http://localhost:3000"
+        grafana_user: "{{ grafana_admin_user }}"
+        grafana_password: "{{ grafana_admin_password }}"
+        state: present
+        commit_message: "Import Vault dashboard"
+        overwrite: true
+        path: "/opt/grafana/dashboards/vault-dashboard.json"
+
+    - name: Import PostgreSQL dashboard
+      community.grafana.grafana_dashboard:
+        grafana_url: "http://localhost:3000"
+        grafana_user: "{{ grafana_admin_user }}"
+        grafana_password: "{{ grafana_admin_password }}"
+        state: present
+        commit_message: "Import PostgreSQL dashboard"
+        overwrite: true
+        dashboard_id: 9628
+        dashboard_revision: 7
+
+

@@ -1,0 +1,129 @@
+---
+# Prometheus Role - Install and Configure Prometheus
+# Author: Adrian Johnson <adrian207@gmail.com>
+
+- name: Create prometheus user
+  ansible.builtin.user:
+    name: prometheus
+    shell: /bin/false
+    system: true
+    create_home: false
+
+- name: Create Prometheus directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: '0755'
+  loop:
+    - /etc/prometheus
+    - /etc/prometheus/rules
+    - /etc/prometheus/targets
+    - /var/lib/prometheus
+
+- name: Download Prometheus
+  ansible.builtin.get_url:
+    url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+    dest: /tmp/prometheus.tar.gz
+    mode: '0644'
+
+- name: Extract Prometheus
+  ansible.builtin.unarchive:
+    src: /tmp/prometheus.tar.gz
+    dest: /tmp/
+    remote_src: true
+
+- name: Copy Prometheus binaries
+  ansible.builtin.copy:
+    src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: '0755'
+    owner: prometheus
+    group: prometheus
+    remote_src: true
+  loop:
+    - prometheus
+    - promtool
+
+- name: Copy console files
+  ansible.builtin.copy:
+    src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64/{{ item }}"
+    dest: "/etc/prometheus/{{ item }}"
+    owner: prometheus
+    group: prometheus
+    remote_src: true
+  loop:
+    - consoles
+    - console_libraries
+
+- name: Create Prometheus configuration
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: /etc/prometheus/prometheus.yml
+    owner: prometheus
+    group: prometheus
+    mode: '0644'
+  notify: restart prometheus
+
+- name: Create Prometheus alert rules
+  ansible.builtin.template:
+    src: alerts.yml.j2
+    dest: /etc/prometheus/rules/alerts.yml
+    owner: prometheus
+    group: prometheus
+    mode: '0644'
+  notify: reload prometheus
+
+- name: Create Prometheus systemd service
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Prometheus
+      Documentation=https://prometheus.io/docs/introduction/overview/
+      After=network-online.target
+
+      [Service]
+      Type=simple
+      User=prometheus
+      Group=prometheus
+      ExecStart=/usr/local/bin/prometheus \
+        --config.file=/etc/prometheus/prometheus.yml \
+        --storage.tsdb.path=/var/lib/prometheus/ \
+        --storage.tsdb.retention.time={{ prometheus_storage_retention }} \
+        --storage.tsdb.retention.size={{ prometheus_storage_retention_size }} \
+        --web.console.templates=/etc/prometheus/consoles \
+        --web.console.libraries=/etc/prometheus/console_libraries \
+        --web.listen-address=0.0.0.0:9090
+      Restart=always
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/prometheus.service
+    mode: '0644'
+
+- name: Enable and start Prometheus
+  ansible.builtin.systemd:
+    name: prometheus
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Open firewall for Prometheus
+  ansible.posix.firewalld:
+    port: 9090/tcp
+    permanent: true
+    state: enabled
+    immediate: true
+  when: ansible_os_family == 'RedHat'
+
+- name: Clean up temporary files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/prometheus.tar.gz
+    - "/tmp/prometheus-{{ prometheus_version }}.linux-amd64"
+
+

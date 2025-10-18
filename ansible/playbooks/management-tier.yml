@@ -1,0 +1,116 @@
+---
+# Management Tier Deployment Playbook
+# Author: Adrian Johnson <adrian207@gmail.com>
+# Description: Deploys and configures Vault cluster, DSC pull servers, and AWX
+
+- name: Deploy and Configure HashiCorp Vault Cluster
+  hosts: vault_cluster
+  become: true
+  serial: 1
+  roles:
+    - common
+    - vault
+  tags:
+    - vault
+
+- name: Initialize Vault Cluster
+  hosts: vault-01.{{ domain }}
+  become: true
+  tasks:
+    - name: Check if Vault is already initialized
+      uri:
+        url: "http://localhost:8200/v1/sys/health"
+        method: GET
+        status_code: [200, 429, 501, 503]
+      register: vault_health
+      ignore_errors: true
+
+    - name: Initialize Vault
+      command: vault operator init -key-shares=5 -key-threshold=3 -format=json
+      environment:
+        VAULT_ADDR: "http://127.0.0.1:8200"
+      register: vault_init_output
+      when: vault_health.status == 501
+
+    - name: Save Vault init output
+      copy:
+        content: "{{ vault_init_output.stdout }}"
+        dest: "/opt/vault/vault-init-keys.json"
+        mode: '0600'
+        owner: vault
+        group: vault
+      when: vault_init_output is changed
+
+    - name: Parse unseal keys
+      set_fact:
+        vault_unseal_keys: "{{ (vault_init_output.stdout | from_json).unseal_keys_b64 }}"
+        vault_root_token: "{{ (vault_init_output.stdout | from_json).root_token }}"
+      when: vault_init_output is changed
+      no_log: true
+
+- name: Unseal Vault Cluster
+  hosts: vault_cluster
+  become: true
+  tasks:
+    - name: Check Vault seal status
+      uri:
+        url: "http://localhost:8200/v1/sys/seal-status"
+        method: GET
+      register: seal_status
+
+    - name: Unseal Vault (key 1)
+      command: vault operator unseal {{ hostvars['vault-01.' + domain]['vault_unseal_keys'][0] }}
+      environment:
+        VAULT_ADDR: "http://127.0.0.1:8200"
+      when: seal_status.json.sealed
+      no_log: true
+
+    - name: Unseal Vault (key 2)
+      command: vault operator unseal {{ hostvars['vault-01.' + domain]['vault_unseal_keys'][1] }}
+      environment:
+        VAULT_ADDR: "http://127.0.0.1:8200"
+      when: seal_status.json.sealed
+      no_log: true
+
+    - name: Unseal Vault (key 3)
+      command: vault operator unseal {{ hostvars['vault-01.' + domain]['vault_unseal_keys'][2] }}
+      environment:
+        VAULT_ADDR: "http://127.0.0.1:8200"
+      when: seal_status.json.sealed
+      no_log: true
+
+- name: Deploy DSC Pull Servers (Windows)
+  hosts: dsc_pull_servers
+  tasks:
+    - name: Install DSC Pull Server
+      ansible.windows.win_feature:
+        name:
+          - DSC-Service
+          - Web-Server
+          - Web-Mgmt-Tools
+        state: present
+        include_management_tools: true
+
+    - name: Configure DSC Pull Server
+      ansible.windows.win_dsc:
+        resource_name: xDSCWebService
+        EndpointName: PSDSCPullServer
+        Port: 8080
+        PhysicalPath: C:\inetpub\PSDSCPullServer
+        CertificateThumbPrint: AllowUnencryptedTraffic
+        ModulePath: C:\Program Files\WindowsPowerShell\DscService\Modules
+        ConfigurationPath: C:\Program Files\WindowsPowerShell\DscService\Configuration
+        State: Started
+        UseSecurityBestPractices: false
+
+- name: Deploy AWX/Ansible Tower
+  hosts: awx-01.{{ domain }}
+  become: true
+  roles:
+    - common
+    - docker
+    - awx
+  tags:
+    - awx
+
+

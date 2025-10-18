@@ -1,0 +1,122 @@
+#cloud-config
+# HashiCorp Vault Node Cloud-Init Configuration
+# Author: Adrian Johnson <adrian207@gmail.com>
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - wget
+  - unzip
+  - jq
+  - net-tools
+  - gnupg
+  - software-properties-common
+
+write_files:
+  - path: /etc/systemd/system/vault.service
+    content: |
+      [Unit]
+      Description=HashiCorp Vault
+      Documentation=https://www.vaultproject.io/docs/
+      Requires=network-online.target
+      After=network-online.target
+      ConditionFileNotEmpty=/etc/vault.d/vault.hcl
+
+      [Service]
+      User=vault
+      Group=vault
+      ProtectSystem=full
+      ProtectHome=read-only
+      PrivateTmp=yes
+      PrivateDevices=yes
+      SecureBits=keep-caps
+      AmbientCapabilities=CAP_IPC_LOCK
+      CapabilityBoundingSet=CAP_SYSLOG CAP_IPC_LOCK
+      NoNewPrivileges=yes
+      ExecStart=/usr/bin/vault server -config=/etc/vault.d/vault.hcl
+      ExecReload=/bin/kill --signal HUP $MAINPID
+      KillMode=process
+      KillSignal=SIGINT
+      Restart=on-failure
+      RestartSec=5
+      TimeoutStopSec=30
+      StartLimitInterval=60
+      StartLimitBurst=3
+      LimitNOFILE=65536
+      LimitMEMLOCK=infinity
+
+      [Install]
+      WantedBy=multi-user.target
+    permissions: '0644'
+
+  - path: /etc/vault.d/vault.hcl
+    content: |
+      ui = true
+      disable_mlock = false
+      
+      storage "raft" {
+        path = "/opt/vault/data"
+        node_id = "vault-${node_id}"
+        
+        retry_join {
+          leader_api_addr = "http://10.10.10.20:8200"
+        }
+        retry_join {
+          leader_api_addr = "http://10.10.10.21:8200"
+        }
+        retry_join {
+          leader_api_addr = "http://10.10.10.22:8200"
+        }
+      }
+      
+      listener "tcp" {
+        address     = "0.0.0.0:8200"
+        tls_disable = 1
+      }
+      
+      api_addr = "http://{{ GetPrivateInterfaces | attr \"address\" }}:8200"
+      cluster_addr = "https://{{ GetPrivateInterfaces | attr \"address\" }}:8201"
+      
+      telemetry {
+        prometheus_retention_time = "30s"
+        disable_hostname = true
+      }
+    permissions: '0640'
+
+runcmd:
+  - |
+    # Create vault user and group
+    useradd --system --home /opt/vault --shell /bin/false vault || true
+    
+    # Create directories
+    mkdir -p /opt/vault/data
+    mkdir -p /etc/vault.d
+    
+    # Download and install Vault
+    VAULT_VERSION="1.15.4"
+    cd /tmp
+    wget https://releases.hashicorp.com/vault/$${VAULT_VERSION}/vault_$${VAULT_VERSION}_linux_amd64.zip
+    unzip vault_$${VAULT_VERSION}_linux_amd64.zip
+    mv vault /usr/bin/
+    chmod +x /usr/bin/vault
+    rm vault_$${VAULT_VERSION}_linux_amd64.zip
+    
+    # Set ownership
+    chown -R vault:vault /opt/vault
+    chown -R vault:vault /etc/vault.d
+    
+    # Enable and start Vault
+    systemctl daemon-reload
+    systemctl enable vault
+    systemctl start vault
+    
+    # Set environment for Vault CLI
+    echo 'export VAULT_ADDR="http://127.0.0.1:8200"' >> /etc/profile.d/vault.sh
+    
+  - echo "Vault node ${node_id} initialized in ${environment} environment"
+
+final_message: "Vault node ${node_id} cloud-init complete after $UPTIME seconds"
+
+

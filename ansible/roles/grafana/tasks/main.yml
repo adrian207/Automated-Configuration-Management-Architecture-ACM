@@ -1,0 +1,120 @@
+---
+# Grafana Role - Install and Configure Grafana
+# Author: Adrian Johnson <adrian207@gmail.com>
+
+- name: Add Grafana APT repository key (Debian/Ubuntu)
+  ansible.builtin.apt_key:
+    url: https://apt.grafana.com/gpg.key
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Add Grafana APT repository (Debian/Ubuntu)
+  ansible.builtin.apt_repository:
+    repo: "deb https://apt.grafana.com stable main"
+    state: present
+    filename: grafana
+  when: ansible_os_family == 'Debian'
+
+- name: Add Grafana YUM repository (RedHat/CentOS)
+  ansible.builtin.yum_repository:
+    name: grafana
+    description: Grafana Repository
+    baseurl: https://rpm.grafana.com
+    gpgcheck: yes
+    gpgkey: https://rpm.grafana.com/gpg.key
+    enabled: yes
+  when: ansible_os_family == 'RedHat'
+
+- name: Install Grafana
+  ansible.builtin.package:
+    name: grafana
+    state: present
+    update_cache: yes
+
+- name: Create Grafana directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: grafana
+    group: grafana
+    mode: '0755'
+  loop:
+    - /etc/grafana/provisioning/datasources
+    - /etc/grafana/provisioning/dashboards
+    - /opt/grafana/dashboards
+
+- name: Configure Grafana
+  ansible.builtin.template:
+    src: grafana.ini.j2
+    dest: /etc/grafana/grafana.ini
+    owner: root
+    group: grafana
+    mode: '0640'
+  notify: restart grafana
+
+- name: Provision Prometheus datasource
+  ansible.builtin.template:
+    src: datasource-prometheus.yml.j2
+    dest: /etc/grafana/provisioning/datasources/prometheus.yml
+    owner: root
+    group: grafana
+    mode: '0640'
+  notify: restart grafana
+
+- name: Provision dashboard configuration
+  ansible.builtin.copy:
+    content: |
+      apiVersion: 1
+      providers:
+        - name: 'default'
+          orgId: 1
+          folder: ''
+          type: file
+          disableDeletion: false
+          updateIntervalSeconds: 10
+          allowUiUpdates: true
+          options:
+            path: /opt/grafana/dashboards
+            foldersFromFilesStructure: true
+    dest: /etc/grafana/provisioning/dashboards/default.yml
+    owner: root
+    group: grafana
+    mode: '0640'
+
+- name: Copy custom dashboards
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: /opt/grafana/dashboards/
+    owner: grafana
+    group: grafana
+    mode: '0644'
+  with_fileglob:
+    - "dashboards/*.json"
+  notify: restart grafana
+
+- name: Enable and start Grafana
+  ansible.builtin.systemd:
+    name: grafana-server
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Open firewall for Grafana
+  ansible.posix.firewalld:
+    port: 3000/tcp
+    permanent: true
+    state: enabled
+    immediate: true
+  when: ansible_os_family == 'RedHat'
+
+- name: Wait for Grafana to be ready
+  ansible.builtin.uri:
+    url: "http://localhost:3000/api/health"
+    method: GET
+    status_code: 200
+  register: grafana_health
+  until: grafana_health.status == 200
+  retries: 30
+  delay: 2
+
+

@@ -1,0 +1,50 @@
+---
+# Main Site Playbook - Deploys Complete Configuration Management Architecture
+# Author: Adrian Johnson <adrian207@gmail.com>
+# Description: Master playbook that orchestrates deployment of all components
+
+- name: Deploy Management Tier Infrastructure
+  import_playbook: management-tier.yml
+  tags:
+    - management
+    - vault
+    - dsc
+
+- name: Deploy Monitoring Tier Infrastructure
+  import_playbook: monitoring-tier.yml
+  tags:
+    - monitoring
+    - prometheus
+    - grafana
+
+- name: Deploy Data Tier Infrastructure
+  import_playbook: data-tier.yml
+  tags:
+    - data
+    - postgres
+
+- name: Configure Linux Managed Nodes
+  import_playbook: configure-linux-nodes.yml
+  tags:
+    - nodes
+    - linux
+
+- name: Configure Windows Managed Nodes
+  import_playbook: configure-windows-nodes.yml
+  tags:
+    - nodes
+    - windows
+
+- name: Deploy Monitoring Agents
+  import_playbook: deploy-monitoring-agents.yml
+  tags:
+    - monitoring
+    - agents
+
+- name: Validate Deployment
+  import_playbook: validate-deployment.yml
+  tags:
+    - validate
+    - test
+
+

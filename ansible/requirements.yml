@@ -1,0 +1,31 @@
+---
+# Ansible Galaxy Requirements
+# Author: Adrian Johnson <adrian207@gmail.com>
+
+collections:
+  - name: community.general
+    version: ">=7.5.0"
+  
+  - name: community.grafana
+    version: ">=1.6.0"
+  
+  - name: ansible.posix
+    version: ">=1.5.0"
+  
+  - name: community.postgresql
+    version: ">=3.2.0"
+  
+  - name: ansible.windows
+    version: ">=2.1.0"
+
+roles:
+  - name: geerlingguy.docker
+    version: ">=6.2.0"
+  
+  - name: geerlingguy.postgresql
+    version: ">=3.4.0"
+  
+  - name: cloudalchemy.prometheus
+    version: ">=2.17.0"
+
+

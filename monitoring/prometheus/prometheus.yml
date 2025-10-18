@@ -1,0 +1,136 @@
+# Prometheus Configuration
+# Author: Adrian Johnson <adrian207@gmail.com>
+# Description: Production Prometheus configuration for Configuration Management Architecture
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'prod-config-mgmt'
+    datacenter: 'primary'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - 'alertmanager-01.prod.contoso.com:9093'
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - 'alerts/*.yml'
+  - 'recording_rules/*.yml'
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          environment: 'prod'
+          service: 'prometheus'
+
+  # Vault cluster monitoring
+  - job_name: 'vault'
+    metrics_path: '/v1/sys/metrics'
+    params:
+      format: ['prometheus']
+    scheme: http
+    static_configs:
+      - targets:
+          - '10.10.10.20:8200'
+          - '10.10.10.21:8200'
+          - '10.10.10.22:8200'
+        labels:
+          environment: 'prod'
+          service: 'vault'
+          cluster: 'vault-prod'
+
+  # Node exporters (Linux systems)
+  - job_name: 'node'
+    file_sd_configs:
+      - files:
+          - 'targets/linux-nodes.json'
+        refresh_interval: 5m
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__meta_filepath]
+        regex: '.*/([^/]+)\.json'
+        target_label: file
+
+  # Windows exporter
+  - job_name: 'windows'
+    file_sd_configs:
+      - files:
+          - 'targets/windows-nodes.json'
+        refresh_interval: 5m
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+
+  # PostgreSQL exporter
+  - job_name: 'postgres'
+    static_configs:
+      - targets:
+          - '10.10.30.10:9187'
+          - '10.10.30.11:9187'
+        labels:
+          environment: 'prod'
+          service: 'postgresql'
+
+  # Grafana monitoring
+  - job_name: 'grafana'
+    static_configs:
+      - targets:
+          - '10.10.20.20:3000'
+        labels:
+          environment: 'prod'
+          service: 'grafana'
+
+  # Alertmanager monitoring
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets:
+          - '10.10.20.30:9093'
+        labels:
+          environment: 'prod'
+          service: 'alertmanager'
+
+  # Blackbox exporter for endpoint monitoring
+  - job_name: 'blackbox-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - https://vault.prod.contoso.com
+          - https://grafana.prod.contoso.com
+          - https://dsc.prod.contoso.com
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 10.10.20.40:9115
+
+  # Blackbox exporter for certificate expiry
+  - job_name: 'blackbox-tls'
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets:
+          - vault.prod.contoso.com:8200
+          - grafana.prod.contoso.com:443
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 10.10.20.40:9115
+
+
