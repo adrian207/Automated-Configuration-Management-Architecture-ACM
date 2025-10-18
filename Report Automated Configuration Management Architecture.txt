@@ -1,0 +1,2262 @@
+# Automated Configuration Management Architecture
+
+**Version:** 2.0  
+**Date:** October 17, 2025  
+**Status:** Final  
+**Author:** Adrian Johnson  
+**Email:** adrian207@gmail.com
+
+---
+
+## Table of Contents
+
+1. [Executive Summary](#1-executive-summary)
+2. [Core Architectural Principles](#2-core-architectural-principles)
+3. [Architectural Blueprints](#3-architectural-blueprints)
+4. [Network Architecture](#4-network-architecture)
+5. [Identity & Access Management](#5-identity--access-management)
+6. [Data Flows & Integration](#6-data-flows--integration)
+7. [Implementation Details](#7-implementation-details)
+8. [Backup & Recovery Strategy](#8-backup--recovery-strategy)
+9. [Compliance & Audit](#9-compliance--audit)
+10. [Performance Metrics & SLAs](#10-performance-metrics--slas)
+11. [Testing Strategy](#11-testing-strategy)
+12. [Change Management](#12-change-management)
+13. [Required Supporting Documentation](#13-required-supporting-documentation)
+14. [Appendices](#14-appendices)
+
+---
+
+## 1. Executive Summary
+
+This document provides a comprehensive technical specification and outlines the required supporting documentation for a tiered, platform-agnostic, automated configuration management architecture. The solution is designed for deployment across cloud (Azure, AWS) and on-premises (vSphere, Hyper-V, OpenStack) environments.
+
+Two distinct architectural blueprints are specified to meet diverse operational needs: a **Hybrid Pull Model (Ansible + DSC)** for continuous state enforcement and an **Ansible-Native Push Model** for complex orchestration. Both are built upon a common foundation of Infrastructure as Code (IaC), centralized secrets management, and robust, automated monitoring.
+
+This specification includes detailed guidance on network architecture, security controls, data flows, backup strategies, and operational procedures required for successful deployment and lifecycle management of the system.
+
+### 1.1 Document Audience
+
+- **Primary:** Infrastructure architects, DevOps engineers, platform teams
+- **Secondary:** Security teams, operations management, compliance officers
+- **Tertiary:** Executive stakeholders, project managers
+
+### 1.2 Assumptions
+
+- Active Directory infrastructure exists for Windows environments
+- Network connectivity between all infrastructure tiers is available or can be established
+- Adequate compute and storage resources are available for infrastructure components
+- Git repository infrastructure (GitHub Enterprise, GitLab, Bitbucket) is available
+- DNS infrastructure is in place for service discovery
+
+---
+
+## 2. Core Architectural Principles
+
+The following principles are foundational to both architectural blueprints and must be adhered to in any implementation.
+
+### 2.1 Infrastructure as Code (IaC)
+
+The entire infrastructure, from network components to application configuration, will be defined and managed as code to ensure repeatability, versioning, and automated provisioning.
+
+**Provisioning Tooling:** Terraform will be used to provision all foundational infrastructure.
+
+**Configuration Tooling:** Ansible will be used for all software-layer configuration.
+
+**Repository Strategy:** A monorepo approach will be used with clear directory structure:
+```
+/terraform/          # Infrastructure provisioning
+/ansible/            # Configuration management
+  /inventory/        # Dynamic and static inventories
+  /roles/            # Reusable Ansible roles
+  /playbooks/        # Orchestration playbooks
+  /group_vars/       # Environment-specific variables
+  /host_vars/        # Host-specific variables
+/dsc/                # PowerShell DSC configurations
+  /configurations/   # DSC configuration scripts
+  /resources/        # Custom DSC resources
+/docs/               # Architecture and operational documentation
+/tests/              # Automated test suites
+```
+
+### 2.2 Centralized Secrets Management
+
+All sensitive data (API keys, passwords, certificates) must be stored and managed within a dedicated secrets management service. Secrets will not be stored in plain text within source code repositories.
+
+**Mechanism:** Automation tooling will retrieve secrets from the vault at runtime for in-memory use only.
+
+**Platform-Specific Implementations:**
+
+- **Azure:** Azure Key Vault
+- **AWS:** AWS Secrets Manager
+- **On-Premises / IaaS:** A highly available HashiCorp Vault cluster (minimum 3 nodes with Raft storage backend)
+
+**Secret Naming Convention:**
+```
+{environment}/{service}/{secret-type}/{secret-name}
+Example: prod/dsc/registration/pull-server-key
+```
+
+**Secret Rotation Policy:**
+- Service account passwords: 90 days
+- API keys: 180 days
+- Certificates: 365 days (auto-renewal at 30 days before expiry)
+- Registration keys: 180 days
+
+### 2.3 Automated Monitoring and Alerting
+
+A dedicated monitoring stack is required to provide real-time visibility into the health and performance of the configuration management infrastructure.
+
+**On-Premises Stack:** Prometheus for data collection, Grafana for visualization, and Alertmanager for notifications.
+
+**Alert Delivery:** Alertmanager will use a third-party service like SendGrid for email delivery, with credentials stored securely in the secrets vault. Integration with PagerDuty or similar on-call management system is recommended.
+
+**Azure-Native Solution:** For Azure deployments, Azure Monitor and Log Analytics will provide these capabilities as a managed platform service.
+
+**AWS-Native Solution:** For AWS deployments, Amazon CloudWatch and CloudWatch Logs with SNS for alerting.
+
+**Key Metrics to Monitor:**
+- Configuration drift detection rate
+- Failed configuration runs
+- Node check-in health (last seen timestamp)
+- Secrets vault availability and latency
+- Pull server/control plane CPU, memory, disk utilization
+- Network connectivity between tiers
+- Certificate expiration warnings (30, 14, 7 days)
+
+**Alert Severity Levels:**
+- **Critical:** Immediate response required (control plane down, secrets vault unreachable)
+- **Warning:** Investigation required within 4 hours (high drift rate, nodes missing check-ins)
+- **Info:** Informational alerts (successful deployments, scheduled maintenance)
+
+---
+
+## 3. Architectural Blueprints
+
+This specification defines two distinct models that can be deployed based on operational requirements. Both models will be managed in a single source code repository using the Git branching strategy defined in Section 7.1.
+
+### 3.1 Blueprint A: Hybrid Pull Model (Ansible + DSC)
+
+This model uses Ansible for initial onboarding and leverages the DSC agent for continuous, autonomous drift correction. It's ideal for enforcing a strict, immutable baseline.
+
+#### 3.1.1 Azure Implementation (PaaS)
+
+The recommended cloud-native implementation utilizes Azure Automation DSC.
+
+**Components:**
+- Azure Automation Account (per environment)
+- Azure Key Vault for secrets management
+- Azure Monitor + Log Analytics for monitoring
+- Azure Blob Storage for DSC module storage
+- Azure Arc for hybrid/on-premises node connectivity (optional)
+
+**Node Capacity:** Up to 5,000 nodes per automation account (Azure limit)
+
+**Cost Optimization:** Use separate automation accounts for dev/test/prod to avoid cross-environment contamination.
+
+#### 3.1.2 On-Premises / IaaS Implementation
+
+This follows a prescriptive scaling path based on node count.
+
+##### Small Tier (<250 Nodes)
+
+**Architecture:**
+- Single Windows Server (4 vCPU, 16GB RAM, 500GB SSD)
+- DSC Pull Server with default ESE database
+- Co-located monitoring stack (Prometheus, Grafana)
+
+**High Availability:** Not recommended at this tier; backup/restore for DR only
+
+**Database:** ESE (Extensible Storage Engine) - built-in
+
+##### Medium Tier (250 - 1,500 Nodes)
+
+**Architecture:**
+- 2x DSC Pull Servers (4 vCPU, 16GB RAM each)
+- External Microsoft SQL Server (Standard Edition, 8 vCPU, 32GB RAM)
+- DFS-R (Distributed File System Replication) for DSC module/configuration replication between pull servers
+- Dedicated monitoring infrastructure (3-node Prometheus cluster)
+
+**High Availability:** 
+- Active-Active pull servers behind DNS round-robin
+- SQL Server basic availability (scheduled backups, warm standby optional)
+
+**Database Requirements:**
+- SQL Server 2019 or later
+- 100GB initial allocation, 500GB maximum
+- Automated backup every 4 hours
+
+##### Large Tier (>1,500 Nodes)
+
+**Architecture:**
+- 4+ DSC Pull Servers behind Load Balancer (4 vCPU, 32GB RAM each)
+- SQL Server Always On Availability Group (Enterprise Edition, 16 vCPU, 64GB RAM, 3-node cluster)
+- Redundant DFS-R cluster (3+ file servers)
+- High-availability monitoring infrastructure (5-node Prometheus cluster with remote storage)
+
+**High Availability:**
+- Load Balancer (F5, HAProxy, or Azure Load Balancer)
+- SQL Always On with automatic failover
+- Geographic redundancy for DR (optional)
+
+**Scaling Formula:** Add 1 pull server per 500 additional nodes beyond baseline
+
+**Load Balancer Configuration:**
+- Health check: HTTPS GET to `/PSDSCPullServer.svc`
+- Session persistence: Source IP affinity
+- Timeout: 300 seconds
+- SSL offloading: Optional (requires certificate management)
+
+#### 3.1.3 Workflow for Hybrid Pull Model
+
+1. **Initial Provisioning:** Terraform creates base infrastructure
+2. **Onboarding:** Ansible playbook installs DSC agent and configures LCM
+3. **Registration:** Node registers with pull server using registration key from vault
+4. **Configuration Assignment:** Pull server assigns configuration based on node role/environment
+5. **Continuous Enforcement:** DSC LCM checks for drift every 15 minutes, applies corrections every 30 minutes
+6. **Reporting:** Nodes report status to pull server; monitoring scrapes metrics
+
+### 3.2 Blueprint B: Ansible-Native Push Model
+
+This model uses Ansible exclusively for all configuration, orchestration, and state enforcement tasks. It's optimal for environments requiring complex, multi-system workflows.
+
+#### 3.2.1 Architecture Overview
+
+**Control Plane:** Central Ansible Tower or AWX cluster serves as the control plane, initiating all configuration pushes.
+
+**State Enforcement:** State is enforced by scheduling recurring playbook runs from Ansible Tower/AWX.
+
+#### 3.2.2 Scaling Tiers
+
+##### Small Tier (<500 Nodes)
+
+**Architecture:**
+- Single Ansible Tower/AWX instance (8 vCPU, 16GB RAM, 250GB SSD)
+- PostgreSQL database (co-located or dedicated: 4 vCPU, 8GB RAM)
+- Redis for caching (co-located)
+
+**Capacity:** Up to 100 concurrent job forks
+
+##### Medium Tier (500 - 2,000 Nodes)
+
+**Architecture:**
+- 2x Ansible Tower/AWX instances in active-active configuration (8 vCPU, 32GB RAM each)
+- Dedicated PostgreSQL cluster (8 vCPU, 16GB RAM, streaming replication)
+- Dedicated Redis cluster (2-node)
+- Shared filesystem for project synchronization (NFS or cloud object storage)
+
+**Capacity:** Up to 400 concurrent job forks
+
+**Load Balancing:** Application load balancer with sticky sessions
+
+##### Large Tier (>2,000 Nodes)
+
+**Architecture:**
+- 4+ Ansible Tower/AWX instances behind load balancer (16 vCPU, 64GB RAM each)
+- PostgreSQL high-availability cluster (16 vCPU, 32GB RAM, 3-node with Patroni)
+- Redis Sentinel cluster (3-node for HA)
+- Distributed object storage for projects (S3, Azure Blob, MinIO)
+- Isolated execution environments using container runtime
+
+**Capacity:** 1,000+ concurrent job forks
+
+**Execution Node Strategy:** Deploy dedicated execution nodes for compute-intensive operations (separate from control plane)
+
+**Scaling Formula:** Add 1 control plane node per 750 additional nodes
+
+#### 3.2.3 Platform-Specific Implementations
+
+**Azure:**
+- Use Azure Database for PostgreSQL (managed service)
+- Azure Cache for Redis (managed service)
+- Azure Blob Storage for project storage
+- Azure Container Instances for execution nodes (optional)
+
+**AWS:**
+- Use Amazon RDS for PostgreSQL (managed service)
+- Amazon ElastiCache for Redis (managed service)
+- Amazon S3 for project storage
+- Amazon ECS for execution nodes (optional)
+
+**On-Premises:**
+- Self-managed PostgreSQL with streaming replication
+- Self-managed Redis with Sentinel
+- NFS or GlusterFS for shared storage
+
+#### 3.2.4 Workflow for Ansible-Native Push Model
+
+1. **Initial Provisioning:** Terraform creates base infrastructure
+2. **Inventory Synchronization:** Dynamic inventory pulls node information from CMDBs, cloud APIs
+3. **Job Scheduling:** Tower/AWX schedules playbook runs based on defined intervals
+4. **Execution:** Control plane initiates SSH/WinRM connections to managed nodes
+5. **Configuration Application:** Playbooks execute idempotently, making only necessary changes
+6. **Reporting:** Job results stored in PostgreSQL, metrics exposed to monitoring
+7. **Drift Detection:** Scheduled check-mode runs detect configuration drift without applying changes
+
+#### 3.2.5 State Enforcement Strategy
+
+**Baseline Configuration:** Daily full playbook runs (off-peak hours: 2:00 AM local time)
+
+**Critical Services:** Every 4 hours for security-critical configurations
+
+**Application Deployments:** On-demand via webhook triggers or manual launches
+
+**Drift Detection:** Hourly check-mode runs with alerting on detected changes
+
+---
+
+## 4. Network Architecture
+
+### 4.1 Network Segmentation
+
+All infrastructure components must be deployed following network segmentation best practices.
+
+**Network Tiers:**
+
+1. **Management Tier (Trust Level: Restricted)**
+   - Control plane servers (DSC Pull Servers, Ansible Tower/AWX)
+   - Secrets management infrastructure
+   - Git repository servers
+   - Bastion/jump hosts
+
+2. **Monitoring Tier (Trust Level: Restricted)**
+   - Prometheus servers
+   - Grafana servers
+   - Log aggregation infrastructure
+
+3. **Data Tier (Trust Level: Highly Restricted)**
+   - SQL Server clusters
+   - PostgreSQL clusters
+   - Redis clusters
+   - Backup storage
+
+4. **Managed Node Tier (Trust Level: Varies)**
+   - Application servers
+   - Web servers
+   - Database servers
+   - Other managed infrastructure
+
+### 4.2 Firewall Rules
+
+#### 4.2.1 Inbound to Management Tier
+
+| Source | Destination | Port | Protocol | Purpose |
+|--------|-------------|------|----------|---------|
+| Managed Nodes | DSC Pull Server | 443, 8080 | TCP/HTTPS | DSC pull requests |
+| Management Subnet | Ansible Tower/AWX | 443 | TCP/HTTPS | Web UI access |
+| Management Subnet | Ansible Tower/AWX | 22 | TCP/SSH | Administrative access |
+| Monitoring Tier | Management Tier | 9090, 9100 | TCP/HTTP | Metrics collection |
+| VPN/Bastion | Management Tier | 3389, 22 | TCP/RDP/SSH | Administrative access |
+
+#### 4.2.2 Outbound from Management Tier
+
+| Source | Destination | Port | Protocol | Purpose |
+|--------|-------------|------|----------|---------|
+| DSC Pull Server | Data Tier (SQL) | 1433 | TCP | Database connection |
+| Ansible Tower/AWX | Data Tier (PostgreSQL) | 5432 | TCP | Database connection |
+| Ansible Tower/AWX | Managed Nodes | 22, 5986 | TCP/SSH/WinRM | Configuration push |
+| Management Tier | Secrets Vault | 8200 | TCP/HTTPS | Secrets retrieval |
+| Management Tier | Git Repository | 443, 22 | TCP/HTTPS/SSH | Source code sync |
+| Management Tier | Internet | 443 | TCP/HTTPS | Package downloads (restricted via proxy) |
+
+#### 4.2.3 Inbound to Data Tier
+
+| Source | Destination | Port | Protocol | Purpose |
+|--------|-------------|------|----------|---------|
+| Management Tier | SQL Server | 1433 | TCP | DSC database access |
+| Management Tier | PostgreSQL | 5432 | TCP | Tower/AWX database |
+| Management Tier | Redis | 6379 | TCP | Cache access |
+| Data Tier | Data Tier | 1433, 5432, 6379 | TCP | Cluster replication |
+
+#### 4.2.4 Network Requirements for Hybrid/Multi-Cloud
+
+- **Site-to-Site VPN:** IPSec tunnels between on-premises and cloud environments
+- **ExpressRoute/Direct Connect:** For production workloads requiring low latency
+- **Bandwidth Requirements:**
+  - Small deployments: 100 Mbps minimum
+  - Medium deployments: 500 Mbps minimum
+  - Large deployments: 1 Gbps minimum
+- **Latency Requirements:** <100ms RTT between control plane and managed nodes
+
+### 4.3 DNS Requirements
+
+**Internal DNS Records Required:**
+
+- `dsc.{domain}` - DSC Pull Server (A record or load balancer VIP)
+- `dsc-01.{domain}`, `dsc-02.{domain}` - Individual pull servers
+- `tower.{domain}` or `awx.{domain}` - Ansible control plane
+- `vault.{domain}` - Secrets management service
+- `prometheus.{domain}`, `grafana.{domain}` - Monitoring endpoints
+
+**Service Discovery:**
+- Consul or similar service discovery platform recommended for dynamic environments
+- Cloud-native solutions: Azure Private DNS, Route 53 Private Hosted Zones
+
+### 4.4 Certificate Management
+
+**Requirements:**
+- All control plane endpoints must use TLS 1.2 or higher
+- Valid certificates from internal PKI or public CA
+- Certificate storage in secrets vault
+- Automated renewal process
+
+**Certificate Locations:**
+- DSC Pull Server: IIS certificate store
+- Ansible Tower/AWX: Tower/AWX certificate configuration
+- Secrets Vault: Vault TLS configuration
+- Monitoring endpoints: Nginx/reverse proxy certificates
+
+---
+
+## 5. Identity & Access Management
+
+### 5.1 Authentication Strategy
+
+**Primary Identity Providers:**
+- **Windows Environments:** Active Directory (AD)
+- **Linux Environments:** Active Directory via SSSD/Realm, or LDAP
+- **Cloud Environments:** Azure AD, AWS IAM, federated identity
+
+### 5.2 Role-Based Access Control (RBAC) Model
+
+#### 5.2.1 Defined Roles
+
+**Platform Administrator**
+- Full access to all infrastructure components
+- Permission to modify RBAC policies
+- Access to secrets vault root tokens
+- Limited to 2-3 individuals
+
+**Configuration Engineer**
+- Read/write access to Git repositories
+- Ability to create and modify configurations
+- Read access to secrets (no write/delete)
+- Execute playbooks/deploy configurations in dev/test
+- Request approval for production deployments
+
+**Operations Engineer**
+- Read-only access to configurations
+- Execute pre-approved playbooks in production
+- Access to monitoring dashboards
+- Ability to acknowledge alerts
+
+**Security Auditor**
+- Read-only access to all systems
+- Access to audit logs
+- No execute permissions
+- No secrets access (audit trails only)
+
+**Service Account**
+- Machine-to-machine authentication
+- Limited to specific automation tasks
+- No interactive login
+- Regularly rotated credentials
+
+#### 5.2.2 RBAC Implementation
+
+**Ansible Tower/AWX:**
+- Organizations: Map to business units or environments
+- Teams: Map to defined roles above
+- Credentials: Stored in Tower credential vault, synced from HashiCorp Vault
+- Job Templates: Execution permissions granted to specific teams
+- Inventories: Read permissions based on team membership
+
+**DSC Pull Server:**
+- Windows groups in Active Directory for administrative access
+- Registration keys tied to environment/role
+- Separate pull server instances per sensitivity level (optional)
+
+**Secrets Vault (HashiCorp Vault):**
+- Policies defined per role
+- Path-based access control
+- AppRole authentication for service accounts
+- LDAP/AD authentication for human users
+- Token TTL: 8 hours for interactive, 24 hours for service accounts
+
+**Git Repository:**
+- Branch protection rules on `main` branch
+- Required approvals for production changes (minimum 2)
+- CODEOWNERS file defining approval authority
+- Signed commits required for production branches
+
+### 5.3 Service Account Strategy
+
+**Naming Convention:**
+```
+svc-{service}-{environment}-{function}
+Example: svc-ansible-prod-executor
+```
+
+**Service Accounts Required:**
+
+1. **Ansible Execution Account**
+   - Purpose: SSH/WinRM connection to managed nodes
+   - Privileges: Sudo/local admin on managed nodes
+   - Credential Type: SSH key pair (Linux), domain account (Windows)
+
+2. **DSC Pull Server Service Account**
+   - Purpose: SQL Server database access
+   - Privileges: db_owner on DSC database
+   - Credential Type: Domain service account
+
+3. **Monitoring Scraper Account**
+   - Purpose: Metrics collection from endpoints
+   - Privileges: Read-only API access
+   - Credential Type: API token or service principal
+
+4. **Git Sync Account**
+   - Purpose: Automated code synchronization
+   - Privileges: Read access to repositories
+   - Credential Type: Personal access token or deploy key
+
+5. **Secrets Vault AppRole**
+   - Purpose: Automated secret retrieval by automation tooling
+   - Privileges: Read secrets within defined paths
+   - Credential Type: AppRole role-id and secret-id
+
+### 5.4 Multi-Factor Authentication (MFA)
+
+**Requirement:** MFA mandatory for all human interactive logins to:
+- Ansible Tower/AWX web interface
+- Secrets vault web UI
+- Git repository web interface
+- Bastion/jump host access
+
+**Acceptable MFA Methods:**
+- TOTP (Time-based One-Time Password): Google Authenticator, Microsoft Authenticator
+- Hardware tokens: YubiKey, smart cards
+- Push notifications via approved MFA provider
+
+**Exemptions:** Service accounts (use long-lived secrets with strict access controls instead)
+
+---
+
+## 6. Data Flows & Integration
+
+### 6.1 Configuration Deployment Flow
+
+#### 6.1.1 Development to Production Pipeline (Blueprint A: Hybrid Pull)
+
+```
+┌─────────────────┐
+│ Developer       │
+│ Workstation     │
+└────────┬────────┘
+         │ 1. Git Push
+         ▼
+┌─────────────────┐
+│ Git Repository  │
+│ (feature branch)│
+└────────┬────────┘
+         │ 2. Pull Request
+         ▼
+┌─────────────────┐
+│ Code Review     │
+│ & Approval      │
+└────────┬────────┘
+         │ 3. Merge to main
+         ▼
+┌─────────────────┐
+│ CI/CD Pipeline  │
+│ (GitHub Actions,│
+│  GitLab CI,     │
+│  Jenkins)       │
+└────────┬────────┘
+         │ 4. Automated Tests
+         │    - Syntax validation
+         │    - Molecule tests
+         │    - Security scans
+         ▼
+┌─────────────────┐
+│ Compile DSC MOF │
+│ Files           │
+└────────┬────────┘
+         │ 5. Publish to Pull Server
+         ▼
+┌─────────────────┐
+│ DSC Pull Server │
+│ (Dev/Test)      │
+└────────┬────────┘
+         │ 6. Validation in Lower Env
+         ▼
+┌─────────────────┐
+│ Change Approval │
+│ (ITSM)          │
+└────────┬────────┘
+         │ 7. Approved
+         ▼
+┌─────────────────┐
+│ DSC Pull Server │
+│ (Production)    │
+└────────┬────────┘
+         │ 8. Nodes Pull Config
+         ▼
+┌─────────────────┐
+│ Managed Nodes   │
+└─────────────────┘
+```
+
+#### 6.1.2 Configuration Deployment Flow (Blueprint B: Ansible-Native)
+
+```
+┌─────────────────┐
+│ Developer       │
+│ Workstation     │
+└────────┬────────┘
+         │ 1. Git Push
+         ▼
+┌─────────────────┐
+│ Git Repository  │
+└────────┬────────┘
+         │ 2. Webhook Trigger
+         ▼
+┌─────────────────┐
+│ Ansible Tower/  │
+│ AWX Project Sync│
+└────────┬────────┘
+         │ 3. Pull Latest Code
+         ▼
+┌─────────────────┐
+│ Job Template    │
+│ Execution (Dev) │
+└────────┬────────┘
+         │ 4. Test in Dev
+         ▼
+┌─────────────────┐
+│ Change Approval │
+│ (ITSM)          │
+└────────┬────────┘
+         │ 5. Approved
+         ▼
+┌─────────────────┐
+│ Job Template    │
+│ Execution (Prod)│
+└────────┬────────┘
+         │ 6. Push to Nodes
+         ▼
+┌─────────────────┐
+│ Managed Nodes   │
+└─────────────────┘
+```
+
+### 6.2 Secrets Retrieval Flow
+
+```
+┌─────────────────┐
+│ Automation Tool │
+│ (Ansible/DSC)   │
+└────────┬────────┘
+         │ 1. Authenticate with AppRole
+         ▼
+┌─────────────────┐
+│ HashiCorp Vault │
+└────────┬────────┘
+         │ 2. Return Short-lived Token
+         ▼
+┌─────────────────┐
+│ Automation Tool │
+└────────┬────────┘
+         │ 3. Request Secret
+         ▼
+┌─────────────────┐
+│ HashiCorp Vault │
+└────────┬────────┘
+         │ 4. Return Secret (in-memory only)
+         ▼
+┌─────────────────┐
+│ Automation Tool │
+│ Uses Secret     │
+│ (not persisted) │
+└────────┬────────┘
+         │ 5. Secret Discarded After Use
+         ▼
+┌─────────────────┐
+│ Token Revoked   │
+│ (TTL expires)   │
+└─────────────────┘
+```
+
+### 6.3 Monitoring Data Flow
+
+```
+┌─────────────────┐
+│ Managed Nodes   │
+│ (Exporters)     │
+└────────┬────────┘
+         │ Expose Metrics :9100
+         ▼
+┌─────────────────┐
+│ Prometheus      │
+│ (Scrape every   │
+│  30 seconds)    │
+└────────┬────────┘
+         │ Store Time-Series Data
+         ▼
+┌─────────────────┐
+│ Grafana         │
+│ (Visualization) │
+└────────┬────────┘
+         │ Query Metrics
+         ▼
+┌─────────────────┐
+│ Alertmanager    │
+│ (Threshold      │
+│  Evaluation)    │
+└────────┬────────┘
+         │ Trigger Alerts
+         ▼
+┌─────────────────┐
+│ PagerDuty/Email │
+│ (Notifications) │
+└─────────────────┘
+```
+
+### 6.4 Integration Points
+
+#### 6.4.1 ITSM Integration (ServiceNow, Jira Service Management)
+
+**Purpose:** Automated change request creation and approval tracking
+
+**Implementation:**
+- Ansible Tower/AWX workflow includes change request creation step
+- Change request number required for production deployments
+- API integration to query change approval status
+- Automated comment updates with deployment results
+
+**API Endpoints:**
+- Create change request: `POST /api/v1/change/requests`
+- Query status: `GET /api/v1/change/requests/{id}`
+- Update with results: `PUT /api/v1/change/requests/{id}/notes`
+
+#### 6.4.2 CMDB Integration
+
+**Purpose:** Dynamic inventory synchronization
+
+**Supported CMDBs:**
+- ServiceNow CMDB
+- Device42
+- Netbox
+- Cloud provider APIs (Azure Resource Manager, AWS EC2 API)
+
+**Implementation:**
+- Ansible dynamic inventory scripts/plugins
+- Scheduled synchronization every 15 minutes
+- Caching for performance (5-minute cache TTL)
+- Node classification based on CMDB attributes
+
+#### 6.4.3 CI/CD Pipeline Integration
+
+**Purpose:** Configuration testing and deployment automation
+
+**Supported Platforms:**
+- GitHub Actions
+- GitLab CI/CD
+- Jenkins
+- Azure DevOps Pipelines
+
+**Pipeline Stages:**
+1. **Lint:** Ansible-lint, PSScriptAnalyzer for PowerShell DSC
+2. **Security Scan:** Ansible Galaxy role scanning, secrets detection (TruffleHog)
+3. **Unit Test:** Molecule for Ansible, Pester for PowerShell DSC
+4. **Integration Test:** Test Kitchen or Vagrant-based testing
+5. **Deploy to Dev:** Automated deployment to development environment
+6. **Manual Approval:** Human gate for production
+7. **Deploy to Prod:** Automated deployment to production
+
+#### 6.4.4 Log Aggregation Integration
+
+**Purpose:** Centralized logging for audit and troubleshooting
+
+**Supported Solutions:**
+- ELK Stack (Elasticsearch, Logstash, Kibana)
+- Splunk
+- Azure Log Analytics
+- AWS CloudWatch Logs
+
+**Log Sources:**
+- Ansible Tower/AWX job output
+- DSC Pull Server event logs
+- Windows Event Logs from managed nodes
+- Linux syslog from managed nodes
+- Secrets vault audit logs
+
+**Retention Policy:**
+- Production logs: 365 days
+- Non-production logs: 90 days
+- Audit logs: 7 years (compliance requirement)
+
+---
+
+## 7. Implementation Details
+
+### 7.1 Git Branching Strategy
+
+A dedicated Git branching strategy will manage the two architectural blueprints and ensure safe, controlled deployments.
+
+**Branch Structure:**
+
+- **`main` Branch**
+  - Contains common Terraform code
+  - Ansible inventory (dynamic and static)
+  - Shared Ansible roles
+  - Documentation
+  - Protected branch: requires 2 approvals for merge
+
+- **`develop` Branch**
+  - Integration branch for active development
+  - Continuous integration testing runs on every push
+  - Merges to `main` via pull request after validation
+
+- **`feature/hybrid-dsc` Branch**
+  - Contains assets specific to Hybrid Pull Model
+  - PowerShell DSC configurations
+  - DSC-specific Terraform modules
+
+- **`feature/ansible-native` Branch**
+  - Contains complete library of playbooks for Ansible Push Model
+  - Ansible-specific Terraform modules
+  - AWX/Tower configuration as code
+
+**Environment Branches:**
+- `env/development`
+- `env/staging`
+- `env/production`
+
+**Release Tagging:**
+- Semantic versioning: `v{major}.{minor}.{patch}`
+- Example: `v1.0.0`, `v1.1.0`, `v1.1.1`
+- Production deployments only from tagged releases
+
+**Hotfix Process:**
+- `hotfix/*` branches created from production tag
+- Merged to both `main` and `env/production` after testing
+- New patch version tag created
+
+### 7.2 Automated Node Onboarding
+
+New server instances will be automatically configured and registered with the configuration management system.
+
+#### 7.2.1 Windows Onboarding (Hybrid DSC Model)
+
+**Method:** Active Directory Group Policy (GPO)
+
+**GPO Configuration:**
+
+1. Create GPO: "DSC Configuration Management Enrollment"
+2. Scope: Apply to OUs containing servers to be managed
+3. Computer Configuration → Policies → Windows Settings → Scripts → Startup
+4. Script: `C:\Scripts\Configure-DSC.ps1`
+
+**PowerShell Script (Configure-DSC.ps1):**
+
+See Appendix A for complete script.
+
+**Key Actions:**
+- Detect environment based on AD site or subnet
+- Retrieve registration key from secrets vault (via service account)
+- Configure LCM with appropriate pull server URL
+- Set configuration mode to ApplyAndAutoCorrect
+- Set refresh frequency and reboot behavior
+
+#### 7.2.2 Linux Onboarding (Hybrid DSC Model)
+
+**Method:** Ansible playbook executed during server provisioning
+
+See Appendix B for complete playbook.
+
+**Execution Methods:**
+- Terraform provisioner (local-exec or remote-exec)
+- Cloud-init user data script
+- Kickstart post-installation script
+- Manual execution for legacy systems
+
+#### 7.2.3 Node Onboarding (Ansible-Native Model)
+
+**Method:** Dynamic inventory + SSH key distribution
+
+**Process:**
+
+1. **SSH Key Distribution:**
+   - Public key added to `authorized_keys` during provisioning
+   - Cloud-init for cloud instances
+   - Kickstart for on-premises Linux
+   - GPO for Windows (WinRM certificate or CredSSP)
+
+2. **Dynamic Inventory:**
+   - Node automatically appears in inventory upon provisioning
+   - Ansible Tower/AWX syncs inventory every 15 minutes
+   - Tags applied based on metadata (environment, role, application)
+
+3. **Initial Configuration:**
+   - Scheduled job template runs against newly discovered nodes
+   - Applies baseline configuration
+   - Installs monitoring agents
+   - Configures security hardening
+
+### 7.3 Configuration Versioning Strategy
+
+**Principle:** All configurations are versioned and immutable once deployed.
+
+**Version Tracking:**
+- Git commit SHA stored as tag on deployed nodes
+- DSC: Node metadata includes configuration version
+- Ansible: Set fact with deployment version, store in custom inventory variable
+
+**Rollback Procedure:**
+
+**DSC:**
+1. Identify previous working configuration version (Git tag)
+2. Recompile MOF files from that Git commit
+3. Publish to pull server with higher version number but old content
+4. Nodes automatically pull and apply on next refresh
+
+**Ansible:**
+1. Identify previous working job template run
+2. Re-run job template against affected nodes
+3. Or: Git revert commit, trigger new deployment
+
+**Compatibility Matrix:**
+
+| Component | Supported Versions |
+|-----------|-------------------|
+| Terraform | 1.5.x, 1.6.x, 1.7.x |
+| Ansible Core | 2.14, 2.15, 2.16 |
+| Ansible Tower | 3.8.x, 4.x |
+| AWX | 21.x, 22.x, 23.x |
+| PowerShell | 5.1, 7.2, 7.3, 7.4 |
+| Python | 3.9, 3.10, 3.11, 3.12 |
+| WMF (Windows) | 5.1 |
+| OMI (Linux DSC) | 1.6.x |
+
+**Deprecation Policy:**
+- 90-day notice before removing support for tool versions
+- Migration guide provided
+- Automated checks for deprecated features in CI/CD pipeline
+
+---
+
+## 8. Backup & Recovery Strategy
+
+### 8.1 Component-Level Backup Requirements
+
+#### 8.1.1 DSC Pull Server Backups
+
+**What to Back Up:**
+- SQL Server database (contains node registrations, compliance data)
+- DSC module repository (`C:\Program Files\WindowsPowerShell\DscService\Modules`)
+- Configuration repository (`C:\Program Files\WindowsPowerShell\DscService\Configuration`)
+- IIS configuration
+- SSL/TLS certificates
+- Registration keys
+
+**Backup Schedule:**
+- Database: Every 4 hours (differential), daily full backup
+- File repositories: Daily
+- Configuration exports: Weekly
+
+**Retention:**
+- Hourly: 72 hours
+- Daily: 30 days
+- Weekly: 90 days
+- Monthly: 1 year
+
+**Backup Method:**
+- SQL Server: Native SQL backup with compression
+- Files: Robocopy to network share or cloud storage
+- Automated via scheduled task or backup agent
+
+#### 8.1.2 Ansible Tower/AWX Backups
+
+**What to Back Up:**
+- PostgreSQL database (contains job history, credentials, inventories)
+- Project files (Git repositories cached locally)
+- Execution logs
+- Tower/AWX configuration
+
+**Backup Schedule:**
+- Database: Every 6 hours
+- Daily full backup
+
+**Retention:**
+- Hourly: 72 hours
+- Daily: 30 days
+- Monthly: 1 year
+
+**Backup Method:**
+- Built-in backup: `awx-manage backup` or Tower setup backup command
+- Database: `pg_dump` with compression
+- Store backups in S3, Azure Blob, or on-premises object storage
+
+#### 8.1.3 Secrets Vault Backups
+
+**What to Back Up:**
+- Vault data (encrypted secrets)
+- Vault configuration
+- Unseal keys (stored offline, physically secure location)
+- Root tokens (stored offline, physically secure location)
+
+**Backup Schedule:**
+- Continuous backup via Raft snapshots (every 1 hour)
+- Daily snapshots retained
+
+**Retention:**
+- Hourly snapshots: 7 days
+- Daily snapshots: 90 days
+
+**Backup Method:**
+- Raft integrated storage snapshots: `vault operator raft snapshot save`
+- Store in encrypted form in separate storage system
+- Geographic redundancy required for production
+
+**Critical Security Requirement:**
+- Unseal keys and root tokens NEVER stored digitally with backups
+- Physical safe or hardware security module (HSM) required
+
+#### 8.1.4 Git Repository Backups
+
+**What to Back Up:**
+- All Git repositories (code, configurations, documentation)
+- Git server configuration (if self-hosted)
+
+**Backup Schedule:**
+- Continuous replication (if using GitHub, GitLab SaaS: handled by provider)
+- Self-hosted: Daily mirror to secondary location
+
+**Retention:**
+- Git history is permanent; backups primarily for DR
+
+**Backup Method:**
+- Self-hosted: `git clone --mirror` to backup location
+- SaaS: Provider's built-in redundancy sufficient; export for compliance if needed
+
+#### 8.1.5 Monitoring Infrastructure Backups
+
+**What to Back Up:**
+- Prometheus data (time-series database)
+- Grafana dashboards and configuration
+- Grafana database (SQLite or PostgreSQL)
+- Alertmanager configuration
+
+**Backup Schedule:**
+- Prometheus: Continuous replication to remote storage (optional)
+- Grafana: Daily database backup
+- Configurations: Daily
+
+**Retention:**
+- Metrics: 30 days local, 1 year in remote storage (if configured)
+- Configurations: 90 days
+
+**Backup Method:**
+- Prometheus: Remote write to Thanos, Cortex, or cloud storage
+- Grafana: Database dump, API export of dashboards
+- Configurations: Git repository (infrastructure as code)
+
+### 8.2 Disaster Recovery Procedures
+
+#### 8.2.1 Recovery Time Objective (RTO) and Recovery Point Objective (RPO)
+
+| Component | RTO | RPO |
+|-----------|-----|-----|
+| DSC Pull Server | 4 hours | 4 hours |
+| Ansible Tower/AWX | 4 hours | 6 hours |
+| Secrets Vault | 1 hour | 1 hour |
+| Monitoring Stack | 8 hours | 24 hours |
+| Git Repository | 2 hours | 1 hour |
+
+#### 8.2.2 DSC Pull Server Recovery
+
+**Scenario: Complete Pull Server Failure**
+
+1. Provision new infrastructure via Terraform
+2. Restore SQL Server database from most recent backup
+3. Restore file repositories (modules, configurations)
+4. Restore IIS configuration and SSL certificates
+5. Update DNS to point to new server (or restore same IP)
+6. Validate: Execute test node check-in
+7. Notify operations team
+
+**Estimated Time:** 3-4 hours
+
+#### 8.2.3 Ansible Tower/AWX Recovery
+
+**Scenario: Control Plane Failure**
+
+1. Provision new infrastructure via Terraform
+2. Install Tower/AWX using automated installation playbook
+3. Restore PostgreSQL database from backup
+4. Restore Tower/AWX configuration (use restore command)
+5. Sync projects from Git repositories
+6. Validate: Execute test job template
+7. Notify operations team
+
+**Estimated Time:** 3-4 hours
+
+#### 8.2.4 Secrets Vault Recovery
+
+**Scenario: Vault Cluster Failure**
+
+1. Provision new Vault cluster via Terraform
+2. Initialize new Vault cluster
+3. Restore Raft snapshot from backup
+4. Unseal Vault using unseal keys (from physical secure storage)
+5. Validate: Test secret retrieval
+6. Update automation tools with new Vault endpoint (if IP changed)
+7. Notify security team
+
+**Estimated Time:** 1-2 hours
+
+**Critical Note:** Unseal keys must be retrievable from secure offline storage (safe, HSM).
+
+### 8.3 Backup Testing
+
+**Schedule:** Quarterly disaster recovery drills
+
+**Test Scope:**
+- Full recovery of one component in non-production environment
+- Rotate components each quarter
+- Document lessons learned
+- Update runbooks based on findings
+
+**Success Criteria:**
+- Recovery completed within RTO
+- Data loss within acceptable RPO
+- All functionality validated post-recovery
+
+---
+
+## 9. Compliance & Audit
+
+### 9.1 Logging Requirements
+
+All infrastructure components must generate audit logs for compliance and security investigations.
+
+**Required Log Events:**
+
+**Authentication & Authorization:**
+- All login attempts (successful and failed)
+- Permission changes
+- Role assignments and modifications
+- API authentication events
+
+**Configuration Changes:**
+- All configuration deployments
+- Job executions (who, what, when, result)
+- Secret access (not the secret value itself)
+- Infrastructure changes via Terraform
+
+**System Events:**
+- Service start/stop events
+- System errors and warnings
+- Network connectivity issues
+- Certificate renewals and expirations
+
+### 9.2 Log Retention
+
+| Log Type | Retention Period | Storage Location |
+|----------|-----------------|------------------|
+| Audit logs (authentication, authorization) | 7 years | Immutable storage |
+| Configuration change logs | 3 years | Standard storage |
+| Job execution logs | 1 year | Standard storage |
+| System performance metrics | 90 days local, 1 year remote | Prometheus/remote storage |
+| Error logs | 1 year | Standard storage |
+
+### 9.3 Compliance Frameworks
+
+This architecture must support the following compliance requirements:
+
+**SOC 2 Type II:**
+- Access controls: RBAC implementation (Section 5.2)
+- Change management: Git workflow, approvals (Section 7.1, 12.1)
+- Monitoring: Real-time alerting (Section 2.3)
+- Data protection: Secrets management (Section 2.2)
+- Backup & recovery: Tested procedures (Section 8)
+
+**PCI DSS (if applicable):**
+- Requirement 2.4: Configuration standards maintained via DSC/Ansible
+- Requirement 8: Unique IDs, MFA for access
+- Requirement 10: Audit trail implementation
+- Requirement 11.5: Change detection via drift monitoring
+
+**HIPAA (if applicable):**
+- Access controls: RBAC and MFA
+- Audit controls: Comprehensive logging
+- Integrity controls: Configuration immutability
+- Transmission security: TLS for all communications
+
+**CIS Controls:**
+- Control 4: Secure configuration via automated enforcement
+- Control 6: Audit log management
+- Control 8: Audit log protection (immutable storage)
+
+### 9.4 Audit Procedures
+
+**Quarterly Internal Audits:**
+- Review access control lists against current employees
+- Validate MFA enforcement
+- Review privileged access (platform administrators)
+- Test backup restore procedures
+- Verify secrets rotation compliance
+
+**Annual External Audits:**
+- Provide read-only auditor access
+- Export audit logs for requested timeframe
+- Demonstrate configuration drift detection
+- Show change approval processes
+- Document security controls
+
+**Audit Evidence Collection:**
+- Automated export of audit logs via API
+- Git commit history as change evidence
+- ITSM change request tickets
+- Job execution reports from Tower/AWX
+- DSC compliance reports from pull server
+
+---
+
+## 10. Performance Metrics & SLAs
+
+### 10.1 Key Performance Indicators (KPIs)
+
+**Configuration Compliance:**
+- **Target:** 99% of nodes in compliant state
+- **Measurement:** DSC reporting database, Ansible Tower reporting
+- **Alerting:** Alert if compliance drops below 95%
+
+**Configuration Convergence Time:**
+- **Target:** 90% of configuration changes applied within 30 minutes
+- **Measurement:** Time from configuration publish to node application
+- **Varies by model:**
+  - DSC Pull: Dependent on check-in frequency (15-minute default)
+  - Ansible Push: Dependent on job execution time
+
+**System Availability:**
+- **Target:** 99.5% uptime for control plane components
+- **Measurement:** Prometheus uptime checks
+- **Excludes:** Planned maintenance windows
+
+**Failed Configuration Rate:**
+- **Target:** <2% of configuration runs result in failure
+- **Measurement:** Job failure rate in Tower/AWX, DSC error reports
+- **Alerting:** Alert if failure rate exceeds 5%
+
+**Drift Detection:**
+- **Target:** Configuration drift detected within 1 hour
+- **Measurement:** Time from unauthorized change to alert
+- **Method:** 
+  - DSC: Continuous LCM monitoring
+  - Ansible: Scheduled check-mode runs
+
+**Secret Rotation Compliance:**
+- **Target:** 100% of secrets rotated within policy window
+- **Measurement:** Vault secret metadata (creation date)
+- **Alerting:** Alert at 80% of rotation period
+
+### 10.2 Service Level Agreements (SLAs)
+
+**Control Plane Availability:**
+- **SLA:** 99.5% monthly uptime
+- **Measurement:** Prometheus uptime monitoring
+- **Downtime Budget:** ~3.6 hours per month
+- **Penalties:** None for internal service; escalation to leadership if missed
+
+**Configuration Deployment Time:**
+- **SLA:** Production deployments completed within 2-hour maintenance window
+- **Measurement:** Start to finish time of deployment job
+- **Escalation:** If deployment exceeds window, trigger rollback procedure
+
+**Incident Response Time:**
+- **Critical Severity:** Initial response within 15 minutes, resolution within 4 hours
+- **High Severity:** Initial response within 1 hour, resolution within 8 hours
+- **Medium Severity:** Initial response within 4 hours, resolution within 24 hours
+- **Low Severity:** Initial response within 24 hours, resolution within 5 business days
+
+**Support Hours:**
+- **Business Hours:** 8:00 AM - 6:00 PM local time (all severities)
+- **After Hours:** On-call engineer for Critical and High severity only
+
+### 10.3 Capacity Planning
+
+**Monitoring Thresholds:**
+
+| Metric | Warning Threshold | Critical Threshold | Action |
+|--------|------------------|-------------------|---------|
+| Control Plane CPU | 70% | 85% | Scale up or add node |
+| Control Plane Memory | 75% | 90% | Scale up or add node |
+| Control Plane Disk | 70% | 85% | Expand disk or clean logs |
+| Database CPU | 70% | 85% | Optimize queries or scale |
+| Database Connections | 70% of max | 90% of max | Increase connection limit |
+| Job Queue Depth | 50 jobs | 100 jobs | Add execution capacity |
+| Node Check-in Failures | 5% | 10% | Investigate network/auth |
+
+**Growth Planning:**
+- Review capacity metrics monthly
+- Forecast growth based on 6-month trend
+- Provision additional capacity when sustained utilization exceeds 60%
+
+**Scalability Testing:**
+- Annual load testing to validate capacity limits
+- Test scenarios:
+  - Maximum concurrent node check-ins (DSC)
+  - Maximum concurrent job executions (Ansible)
+  - Database failover under load
+  - Network partition scenarios
+
+---
+
+## 11. Testing Strategy
+
+### 11.1 Testing Philosophy
+
+**Shift-Left Approach:** Testing begins at development time, not deployment time.
+
+**Test Pyramid:**
+1. **Unit Tests (70%):** Fast, isolated, run on every commit
+2. **Integration Tests (20%):** Test component interactions, run on PR
+3. **End-to-End Tests (10%):** Full system validation, run before production deployment
+
+### 11.2 Unit Testing
+
+**Ansible:**
+- **Tool:** Molecule with Docker or Vagrant
+- **Scope:** Individual roles
+- **Test Cases:**
+  - Syntax validation (ansible-lint)
+  - Idempotency testing (run twice, no changes second time)
+  - Expected system state validation
+
+**Example Molecule Test:**
+```yaml
+---
+dependency:
+  name: galaxy
+driver:
+  name: docker
+platforms:
+  - name: centos8
+    image: centos:8
+    pre_build_image: true
+provisioner:
+  name: ansible
+  lint: |
+    set -e
+    ansible-lint
+verifier:
+  name: testinfra
+  lint: |
+    set -e
+    flake8
+```
+
+**PowerShell DSC:**
+- **Tool:** Pester
+- **Scope:** Individual DSC resources and configurations
+- **Test Cases:**
+  - MOF compilation succeeds
+  - Resource syntax validation
+  - Expected properties set correctly
+
+**Example Pester Test:**
+```powershell
+Describe "Web Server Configuration" {
+    It "Should compile without errors" {
+        { . .\WebServer.ps1; WebServer -OutputPath TestDrive:\ } | Should -Not -Throw
+    }
+    
+    It "Should create a MOF file" {
+        Test-Path "TestDrive:\localhost.mof" | Should -Be $true
+    }
+}
+```
+
+### 11.3 Integration Testing
+
+**Purpose:** Validate that multiple components work together correctly.
+
+**Test Environment:**
+- Isolated test environment mimicking production
+- Provisioned via Terraform
+- Torn down after test execution
+
+**Test Scenarios:**
+
+**Scenario 1: End-to-End Node Onboarding**
+1. Provision new VM
+2. Execute onboarding playbook/script
+3. Verify node registered with control plane
+4. Verify baseline configuration applied
+5. Verify monitoring agent reporting metrics
+
+**Scenario 2: Configuration Update Deployment**
+1. Modify configuration in Git
+2. Trigger CI/CD pipeline
+3. Verify configuration deployed to test environment
+4. Verify expected changes applied to test nodes
+5. Verify no unexpected side effects
+
+**Scenario 3: Drift Detection and Remediation**
+1. Apply baseline configuration
+2. Manually modify configuration on test node (introduce drift)
+3. Wait for drift detection interval
+4. Verify alert generated
+5. Verify automatic remediation (DSC) or manual remediation workflow (Ansible)
+
+### 11.4 User Acceptance Testing (UAT)
+
+**Participants:** Operations team, security team, application owners
+
+**Duration:** 2-week UAT period before production go-live
+
+**Test Scenarios:**
+- Operations team performs daily operational tasks using runbooks
+- Security team validates access controls and audit logging
+- Application owners validate application-specific configurations
+- Simulate failure scenarios and validate monitoring/alerting
+
+**UAT Sign-off Required:** All stakeholders must approve before production deployment.
+
+### 11.5 Security Testing
+
+**Static Analysis:**
+- **Ansible:** ansible-lint, yamllint
+- **PowerShell DSC:** PSScriptAnalyzer
+- **Terraform:** tfsec, checkov
+
+**Secret Scanning:**
+- **Tool:** TruffleHog, GitLeaks
+- **Scope:** All commits in all branches
+- **Action:** Prevent commit if secrets detected
+
+**Vulnerability Scanning:**
+- **Container Images:** Trivy, Clair (if using containers for execution)
+- **Dependencies:** Dependabot, Snyk
+- **Infrastructure:** OpenSCAP for managed nodes
+
+**Penetration Testing:**
+- **Frequency:** Annual or after major architecture changes
+- **Scope:** Control plane components, secrets management
+- **Performed by:** Third-party security firm or internal red team
+
+### 11.6 Performance Testing
+
+**Load Testing:**
+- **Tool:** Locust, JMeter, or custom scripts
+- **Scenarios:**
+  - Simulate 1,000 concurrent node check-ins (DSC)
+  - Execute 100 concurrent Ansible playbooks
+  - Stress test secrets vault (1,000 requests/second)
+
+**Baseline Metrics:**
+- Establish baseline before each major release
+- Compare against baseline to detect performance regressions
+
+**Chaos Engineering (Optional):**
+- Randomly terminate control plane instances
+- Simulate network partitions
+- Validate automatic recovery and failover mechanisms
+
+---
+
+## 12. Change Management
+
+### 12.1 Change Request Process
+
+**Principle:** All production configuration changes must follow a formal change management process.
+
+#### 12.1.1 Change Categories
+
+**Standard Change:**
+- Pre-approved, low-risk changes
+- Examples: Patch deployment, certificate renewal, routine configuration updates
+- Approval: Automated approval via ITSM
+- Lead Time: Can be executed immediately
+
+**Normal Change:**
+- Requires change advisory board (CAB) review
+- Examples: New application deployment, infrastructure scaling, major configuration updates
+- Approval: CAB approval required
+- Lead Time: 3-5 business days
+
+**Emergency Change:**
+- Urgent changes required to resolve critical incidents
+- Examples: Security vulnerability patching, production incident remediation
+- Approval: Expedited approval by emergency change authority
+- Lead Time: 1-2 hours
+- Post-Implementation Review required within 24 hours
+
+#### 12.1.2 Change Request Contents
+
+Every change request must include:
+- **Description:** What is being changed
+- **Justification:** Why the change is needed
+- **Impact Assessment:** What systems/users are affected
+- **Risk Assessment:** What could go wrong
+- **Rollback Plan:** How to undo the change if it fails
+- **Test Results:** Evidence that change was tested in non-production
+- **Implementation Window:** When the change will occur
+- **Implementer:** Who will execute the change
+
+#### 12.1.3 Approval Workflow
+
+```
+Developer → Pull Request → Code Review (2 approvers) → 
+Merge to main → Create Change Request (ITSM) → 
+CAB Review (if Normal) → Approval → 
+Schedule Deployment → Execute → 
+Post-Implementation Review → Close Change
+```
+
+### 12.2 Deployment Windows
+
+**Planned Maintenance Windows:**
+- **Standard:** Tuesday and Thursday, 2:00 AM - 6:00 AM local time
+- **Extended:** First Saturday of each month, 12:00 AM - 8:00 AM local time
+
+**Change Freeze Periods:**
+- Holiday season: December 15 - January 5
+- End of fiscal year: Last week of fiscal year
+- Major business events: As defined by business stakeholders
+
+**Emergency Changes:** Can occur outside maintenance windows with proper approval.
+
+### 12.3 Rollback Procedures
+
+**Rollback Criteria:**
+- Configuration change causes service degradation
+- Error rate exceeds 5%
+- Compliance drift introduced
+- Unforeseen impacts discovered
+
+**Rollback Methods:**
+
+**Git-Based Rollback:**
+1. Identify last known good Git commit
+2. Revert to that commit: `git revert <commit-hash>`
+3. Trigger deployment pipeline
+4. Validate rollback successful
+
+**Ansible Tower/AWX Rollback:**
+1. Identify previous successful job run
+2. Re-launch that job template
+3. Validate rollback successful
+
+**DSC Rollback:**
+1. Identify previous configuration version
+2. Recompile and publish to pull server
+3. Force immediate node refresh (if urgent): `Update-DscConfiguration`
+4. Validate rollback successful
+
+**Time Limit:** Rollback must be initiated within 30 minutes of detecting issue.
+
+### 12.4 Post-Implementation Review
+
+**Conducted:** Within 5 business days of change completion
+
+**Participants:** Change implementer, operations lead, stakeholders
+
+**Agenda:**
+- Was change successful?
+- Were there any issues or surprises?
+- Was the rollback plan adequate (if tested)?
+- Lessons learned
+- Documentation updates needed
+
+**Output:** Updated runbooks, knowledge base articles, lessons learned log
+
+---
+
+## 13. Required Supporting Documentation
+
+Successful implementation, operation, and maintenance of this architecture require the creation of the following supporting documents.
+
+### 13.1 Planning & Design Documents
+
+**Detailed Design Document (DDD)**
+- **Purpose:** Expand this specification with environment-specific details
+- **Contents:**
+  - Network diagrams with IP addressing
+  - Server sizing and specifications
+  - Specific software versions and compatibility matrix
+  - Example configurations
+  - Vendor selection rationale (if applicable)
+- **Owner:** Infrastructure architect
+- **Audience:** Implementation team, operations team
+
+**Cost Analysis & Bill of Materials (BOM)**
+- **Purpose:** Forecast all costs for budgeting and approval
+- **Contents:**
+  - Cloud service consumption estimates (per environment)
+  - Software licensing costs (Ansible Tower, Windows Server, SQL Server)
+  - Third-party service subscriptions (SendGrid, PagerDuty, etc.)
+  - Hardware costs (on-premises deployments)
+  - Labor costs (implementation, ongoing operations)
+  - 3-year total cost of ownership (TCO)
+- **Owner:** Financial analyst, infrastructure architect
+- **Audience:** Finance, executive leadership
+
+### 13.2 Implementation & Testing Documents
+
+**Implementation Plan / Runbook**
+- **Purpose:** Step-by-step guide for deploying the infrastructure
+- **Contents:**
+  - Prerequisites and dependencies
+  - Installation commands with expected output
+  - Verification steps after each phase
+  - Troubleshooting common issues
+  - Estimated time per task
+  - Rollback procedures per phase
+- **Owner:** Implementation lead
+- **Audience:** Implementation team
+
+**Test Plan**
+- **Purpose:** Comprehensive testing strategy and test cases
+- **Contents:**
+  - Unit test specifications (Molecule scenarios, Pester tests)
+  - Integration test scenarios
+  - UAT criteria and sign-off process
+  - Performance/load testing methodology
+  - Security testing requirements
+  - Test environment specifications
+  - Success criteria and acceptance thresholds
+- **Owner:** QA lead, DevOps engineer
+- **Audience:** Testing team, stakeholders
+
+### 13.3 Operations & Maintenance Documents
+
+**Operations Manual / Standard Operating Procedures (SOPs)**
+- **Purpose:** Day-to-day operational guide for the operations team
+- **Contents:**
+  - Common tasks with step-by-step instructions:
+    - Adding a new configuration
+    - Onboarding a new node
+    - Patching control plane infrastructure
+    - Rotating secrets
+    - Scaling infrastructure
+  - Scheduled maintenance procedures
+  - Troubleshooting guides
+  - Contact information and escalation paths
+- **Owner:** Operations manager
+- **Audience:** Operations team, on-call engineers
+
+**Monitoring & Alerting Triage Guide**
+- **Purpose:** Reference for on-call engineers responding to alerts
+- **Contents:**
+  - Alert catalog (every possible alert)
+  - Per alert:
+    - Description and meaning
+    - Severity level
+    - Initial diagnostic steps
+    - Common causes and resolutions
+    - Escalation criteria and contacts
+  - Runbook links for remediation procedures
+  - Known issues and workarounds
+- **Owner:** Operations manager, monitoring engineer
+- **Audience:** On-call team, operations team
+
+### 13.4 Security & Recovery Documents
+
+**Security Plan & Hardening Guide**
+- **Purpose:** Specification of all security controls
+- **Contents:**
+  - RBAC policies and role definitions
+  - Firewall rules (detailed from Section 4.2)
+  - OS hardening standards (CIS benchmarks)
+  - Network segmentation requirements
+  - Encryption requirements (data at rest, data in transit)
+  - Vulnerability management process
+  - Incident response procedures
+  - Security monitoring and alerting
+  - Compliance mapping (SOC 2, PCI, HIPAA, etc.)
+- **Owner:** Security architect
+- **Audience:** Security team, compliance team, auditors
+
+**Disaster Recovery (DR) Plan**
+- **Purpose:** Procedures for recovering from catastrophic failure
+- **Contents:**
+  - Disaster scenarios and likelihood assessment
+  - RTO and RPO per component (from Section 8.2.1)
+  - Step-by-step recovery procedures per component
+  - Failover procedures for HA components
+  - Contact information for DR team
+  - Communication plan (internal and external)
+  - Annual DR testing schedule
+  - Lessons learned from DR tests
+- **Owner:** DR coordinator, infrastructure architect
+- **Audience:** DR team, executive leadership
+
+### 13.5 Training Materials
+
+**Administrator Training Guide**
+- **Purpose:** Train new administrators on the system
+- **Contents:**
+  - Architecture overview
+  - Access procedures
+  - Common operational tasks (hands-on labs)
+  - Troubleshooting techniques
+  - Best practices
+  - FAQs
+- **Owner:** Training coordinator, senior engineer
+- **Audience:** New team members, cross-training staff
+
+**End User Guide (Configuration Developers)**
+- **Purpose:** Guide for developers writing configurations
+- **Contents:**
+  - Git workflow and branching strategy
+  - How to develop and test configurations locally
+  - Code style guides (Ansible, PowerShell)
+  - Common patterns and anti-patterns
+  - Secrets management for developers
+  - Submitting changes for review
+  - CI/CD pipeline overview
+- **Owner:** DevOps lead
+- **Audience:** Configuration developers, application teams
+
+---
+
+## 14. Appendices
+
+### Appendix A: Windows DSC Onboarding Script (Hybrid DSC Model)
+
+**File:** `Configure-DSC.ps1`
+
+```powershell
+<#
+.SYNOPSIS
+    Configures Windows nodes to register with DSC Pull Server
+.DESCRIPTION
+    This script is deployed via GPO Startup Script to automatically
+    onboard Windows servers to the configuration management system.
+.NOTES
+    Version: 1.0
+    Author: Infrastructure Team
+#>
+
+[CmdletBinding()]
+param()
+
+# Set error action preference
+$ErrorActionPreference = 'Stop'
+
+# Logging
+$LogPath = "C:\Windows\Logs\DSC-Onboarding.log"
+function Write-Log {
+    param([string]$Message)
+    $Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    "$Timestamp - $Message" | Out-File -FilePath $LogPath -Append
+    Write-Host $Message
+}
+
+try {
+    Write-Log "Starting DSC onboarding process..."
+
+    # Detect environment based on AD site
+    $ADSite = (Get-WmiObject Win32_NTDomain).DomainName
+    Write-Log "Detected AD Site: $ADSite"
+
+    # Determine Pull Server URL based on environment
+    switch -Wildcard ($ADSite) {
+        "*-Prod*" { 
+            $PullServerURL = "https://dsc.corp.contoso.com:8080/PSDSCPullServer.svc"
+            $Environment = "Production"
+        }
+        "*-Dev*" { 
+            $PullServerURL = "https://dsc-dev.corp.contoso.com:8080/PSDSCPullServer.svc"
+            $Environment = "Development"
+        }
+        default { 
+            $PullServerURL = "https://dsc-test.corp.contoso.com:8080/PSDSCPullServer.svc"
+            $Environment = "Test"
+        }
+    }
+    Write-Log "Environment: $Environment, Pull Server: $PullServerURL"
+
+    # Retrieve registration key from secrets vault
+    # NOTE: This requires a service account with read access to the vault
+    # For production, use AppRole authentication
+    Write-Log "Retrieving registration key from secrets vault..."
+    
+    # Example using direct HTTPS call to Vault (simplified)
+    # In production, use proper authentication with service account
+    $VaultToken = $env:VAULT_TOKEN # Set via GPO or retrieved via AppRole
+    $VaultAddr = "https://vault.corp.contoso.com:8200"
+    $SecretPath = "secret/data/$Environment/dsc/registration"
+    
+    $Headers = @{
+        "X-Vault-Token" = $VaultToken
+    }
+    
+    $Response = Invoke-RestMethod -Uri "$VaultAddr/v1/$SecretPath" -Headers $Headers -Method Get
+    $RegistrationKey = $Response.data.data.key
+    Write-Log "Registration key retrieved successfully"
+
+    # Generate unique Agent ID
+    $AgentId = [Guid]::NewGuid().ToString()
+    Write-Log "Generated Agent ID: $AgentId"
+
+    # Determine configuration name based on server role
+    # This could be determined from AD group membership, hostname pattern, etc.
+    $ConfigurationName = "Windows.Base.Security" # Default
+    
+    # Check for specific roles
+    if ((Get-Service -Name W3SVC -ErrorAction SilentlyContinue)) {
+        $ConfigurationName = "Windows.WebServer"
+        Write-Log "Detected Web Server role"
+    }
+    elseif ((Get-Service -Name MSSQLSERVER -ErrorAction SilentlyContinue)) {
+        $ConfigurationName = "Windows.SQLServer"
+        Write-Log "Detected SQL Server role"
+    }
+
+    # Create DSC Configuration
+    [DSCLocalConfigurationManager()]
+    Configuration LCMConfig {
+        Node localhost {
+            Settings {
+                RefreshMode = 'Pull'
+                RefreshFrequencyMins = 30
+                RebootNodeIfNeeded = $false
+                ActionAfterReboot = 'ContinueConfiguration'
+                ConfigurationMode = 'ApplyAndAutoCorrect'
+                AllowModuleOverwrite = $true
+            }
+
+            ConfigurationRepositoryWeb PullServer {
+                ServerURL = $PullServerURL
+                RegistrationKey = $RegistrationKey
+                ConfigurationNames = @($ConfigurationName)
+                AllowUnsecureConnection = $false
+            }
+
+            ResourceRepositoryWeb PullServerModules {
+                ServerURL = $PullServerURL
+                RegistrationKey = $RegistrationKey
+                AllowUnsecureConnection = $false
+            }
+
+            ReportServerWeb PullServerReports {
+                ServerURL = $PullServerURL
+                RegistrationKey = $RegistrationKey
+                AllowUnsecureConnection = $false
+            }
+        }
+    }
+
+    Write-Log "Compiling LCM configuration..."
+    LCMConfig -OutputPath "C:\DSC\LCMConfig"
+
+    Write-Log "Applying LCM configuration..."
+    Set-DscLocalConfigurationManager -Path "C:\DSC\LCMConfig" -Verbose -Force
+
+    Write-Log "Forcing initial configuration pull..."
+    Update-DscConfiguration -Wait -Verbose
+
+    Write-Log "DSC onboarding completed successfully"
+    
+    # Clean up
+    Remove-Item -Path "C:\DSC\LCMConfig" -Recurse -Force -ErrorAction SilentlyContinue
+
+    exit 0
+}
+catch {
+    Write-Log "ERROR: $($_.Exception.Message)"
+    Write-Log "Stack Trace: $($_.ScriptStackTrace)"
+    exit 1
+}
+```
+
+**GPO Deployment:**
+1. Copy script to SYSVOL: `\\contoso.com\SYSVOL\contoso.com\Scripts\Configure-DSC.ps1`
+2. Create new GPO: "DSC Onboarding"
+3. Edit GPO → Computer Configuration → Policies → Windows Settings → Scripts → Startup
+4. Add script path
+5. Link GPO to OUs containing servers
+6. Set environment variable `VAULT_TOKEN` via GPO (or use Windows credential store)
+
+---
+
+### Appendix B: Linux DSC Onboarding Playbook (Hybrid DSC Model)
+
+**File:** `onboard-linux-dsc.yml`
+
+```yaml
+---
+- name: Onboard Linux Node to DSC Pull Server
+  hosts: linux_servers
+  become: yes
+  vars:
+    # Environment-specific variables (override in inventory or group_vars)
+    environment: "{{ ansible_facts['env'] | default('test') }}"
+    
+    # Pull server URLs per environment
+    pull_server_urls:
+      production: "https://dsc.corp.contoso.com:8080/PSDSCPullServer.svc"
+      development: "https://dsc-dev.corp.contoso.com:8080/PSDSCPullServer.svc"
+      test: "https://dsc-test.corp.contoso.com:8080/PSDSCPullServer.svc"
+    
+    pull_server_url: "{{ pull_server_urls[environment] }}"
+    
+    # Retrieve registration key from HashiCorp Vault
+    registration_key: "{{ lookup('community.hashi_vault.hashi_vault_secret', 
+                             'secret=secret/data/' + environment + '/dsc/registration:key',
+                             url='https://vault.corp.contoso.com:8200') }}"
+    
+    # Determine configuration name based on host groups
+    configuration_name: >-
+      {% if 'webservers' in group_names %}Linux.WebServer
+      {% elif 'dbservers' in group_names %}Linux.Database
+      {% else %}Linux.Base.Security{% endif %}
+    
+    # OMI and DSC package versions
+    omi_version: "1.6.8-1"
+    dsc_version: "1.2.1-0"
+    omi_package_url: "https://github.com/microsoft/omi/releases/download/v{{ omi_version }}/omi-{{ omi_version }}.ssl_110.x64.rpm"
+    dsc_package_url: "https://github.com/microsoft/PowerShell-DSC-for-Linux/releases/download/v{{ dsc_version }}/dsc-{{ dsc_version }}.ssl_110.x64.rpm"
+
+  tasks:
+    - name: Gather facts if not already present
+      setup:
+      when: ansible_facts.get('product_uuid') is not defined
+
+    - name: Install required dependencies
+      yum:
+        name:
+          - openssl
+          - openssl-devel
+          - pam-devel
+        state: present
+      when: ansible_os_family == 'RedHat'
+
+    - name: Install required dependencies (Debian/Ubuntu)
+      apt:
+        name:
+          - openssl
+          - libpam0g-dev
+          - libssl-dev
+        state: present
+        update_cache: yes
+      when: ansible_os_family == 'Debian'
+
+    - name: Create temporary directory for packages
+      file:
+        path: /tmp/dsc-install
+        state: directory
+        mode: '0755'
+
+    - name: Download OMI package
+      get_url:
+        url: "{{ omi_package_url }}"
+        dest: "/tmp/dsc-install/omi.rpm"
+        mode: '0644'
+        timeout: 300
+
+    - name: Download DSC package
+      get_url:
+        url: "{{ dsc_package_url }}"
+        dest: "/tmp/dsc-install/dsc.rpm"
+        mode: '0644'
+        timeout: 300
+
+    - name: Install OMI package
+      yum:
+        name: /tmp/dsc-install/omi.rpm
+        state: present
+        disable_gpg_check: yes
+      when: ansible_os_family == 'RedHat'
+
+    - name: Install DSC package
+      yum:
+        name: /tmp/dsc-install/dsc.rpm
+        state: present
+        disable_gpg_check: yes
+      when: ansible_os_family == 'RedHat'
+
+    - name: Start and enable OMI service
+      systemd:
+        name: omid
+        state: started
+        enabled: yes
+
+    - name: Create DSC meta-configuration directory
+      file:
+        path: /tmp/dsc-metaconfig
+        state: directory
+        mode: '0755'
+
+    - name: Create Meta Configuration MOF file
+      copy:
+        dest: /tmp/dsc-metaconfig/metaconfig.mof
+        mode: '0644'
+        content: |
+          instance of MSFT_DSCMetaConfiguration as $MSFT_DSCMetaConfiguration1
+          {
+              AgentId = "{{ ansible_facts['product_uuid'] }}";
+              ActionAfterReboot = "ContinueConfiguration";
+              AllowModuleOverWrite = $true;
+              ConfigurationMode = "ApplyAndAutoCorrect";
+              ConfigurationModeFrequencyMins = 30;
+              RebootNodeIfNeeded = $false;
+              RefreshFrequencyMins = 15;
+          };
+
+          instance of MSFT_DscConfigurationManagement
+          {
+             [Key] = "1";
+             RegistrationKey = "{{ registration_key }}";
+             ServerURL = "{{ pull_server_url }}";
+             ConfigurationNames = {"{{ configuration_name }}"};
+             AllowModuleOverwrite = $true;
+          };
+
+    - name: Apply the Meta Configuration to the LCM
+      command: /opt/microsoft/dsc/Scripts/SetDscLocalConfigurationManager.py -m /tmp/dsc-metaconfig/
+      register: lcm_result
+      changed_when: "'Successfully' in lcm_result.stdout"
+      failed_when: lcm_result.rc != 0
+
+    - name: Display LCM configuration result
+      debug:
+        var: lcm_result.stdout_lines
+
+    - name: Trigger initial DSC configuration pull
+      command: /opt/microsoft/dsc/Scripts/PerformRequiredConfigurationChecks.py
+      register: dsc_pull_result
+      changed_when: true
+      failed_when: false # Don't fail if configuration not yet available
+
+    - name: Display DSC pull result
+      debug:
+        var: dsc_pull_result.stdout_lines
+
+    - name: Clean up temporary files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/dsc-install
+        - /tmp/dsc-metaconfig
+
+    - name: Configure firewall for OMI (if firewalld is active)
+      firewalld:
+        port: 5986/tcp
+        permanent: yes
+        state: enabled
+        immediate: yes
+      when: ansible_facts.services['firewalld.service'] is defined and 
+            ansible_facts.services['firewalld.service'].state == 'running'
+      ignore_errors: yes
+
+    - name: Log successful onboarding
+      lineinfile:
+        path: /var/log/dsc-onboarding.log
+        line: "{{ ansible_date_time.iso8601 }} - Successfully onboarded to DSC Pull Server: {{ pull_server_url }}"
+        create: yes
+        mode: '0644'
+```
+
+**Usage:**
+
+```bash
+# Onboard all Linux servers in production
+ansible-playbook onboard-linux-dsc.yml -i inventory/production
+
+# Onboard specific host
+ansible-playbook onboard-linux-dsc.yml -i inventory/production --limit webserver01
+
+# Dry run (check mode)
+ansible-playbook onboard-linux-dsc.yml -i inventory/production --check
+```
+
+**Prerequisites:**
+- Ansible 2.14 or later
+- `community.hashi_vault` collection installed: `ansible-galaxy collection install community.hashi_vault`
+- Vault access configured (environment variable `VAULT_TOKEN` or AppRole)
+- SSH access to target Linux hosts
+
+---
+
+### Appendix C: Common Operational Tasks
+
+#### Task 1: Adding a New Configuration (DSC)
+
+1. Create new DSC configuration script in `/dsc/configurations/`
+2. Test locally: Compile MOF and validate
+3. Commit to feature branch
+4. Create pull request
+5. After approval, merge to `main`
+6. CI/CD pipeline compiles MOF files
+7. Publish to DSC Pull Server (dev first, then production)
+8. Assign configuration to nodes via node registration or configuration names
+
+#### Task 2: Adding a New Playbook (Ansible)
+
+1. Create new playbook in `/ansible/playbooks/`
+2. Develop roles if needed in `/ansible/roles/`
+3. Test locally using Molecule
+4. Commit to feature branch
+5. Create pull request
+6. After approval, merge to `main`
+7. Ansible Tower/AWX syncs project automatically
+8. Create Job Template in Tower/AWX
+9. Set schedule if recurring, or execute on-demand
+
+#### Task 3: Rotating Secrets
+
+**Automated (Preferred):**
+- Vault dynamic secrets with TTL rotation
+- Scheduled job template to rotate service account passwords
+
+**Manual:**
+1. Generate new secret value
+2. Update in HashiCorp Vault: `vault kv put secret/{env}/{service}/{name} key=<new-value>`
+3. Update consuming services (Ansible Tower credentials, DSC configurations)
+4. Verify services still function
+5. Archive old secret (keep for 30 days for rollback)
+
+#### Task 4: Scaling Infrastructure
+
+**DSC Pull Server (Medium to Large Tier):**
+1. Provision new pull server via Terraform
+2. Configure DFS-R replication from existing pull servers
+3. Configure SQL Server access
+4. Add to load balancer pool
+5. Validate health checks passing
+6. Monitor for 24 hours before considering stable
+
+**Ansible Tower/AWX:**
+1. Provision new control plane node via Terraform
+2. Install Tower/AWX using inventory-based installation
+3. Point to existing PostgreSQL cluster
+4. Add to load balancer pool
+5. Validate health checks passing
+6. Sync projects and verify execution capacity increased
+
+#### Task 5: Troubleshooting Failed Configuration
+
+**DSC:**
+1. Check pull server logs: `C:\Windows\Logs\DSC\PullServer\`
+2. Check node LCM logs: `Get-WinEvent -LogName "Microsoft-Windows-DSC/Operational"`
+3. Review compliance reports in SQL database
+4. Test configuration MOF manually: `Start-DscConfiguration -Path <path> -Wait -Verbose`
+
+**Ansible:**
+1. Review job output in Tower/AWX UI
+2. Check Ansible logs on control plane: `/var/log/tower/` or `/var/log/awx/`
+3. Re-run job with increased verbosity: `-vvv`
+4. Check managed node connectivity: Test SSH/WinRM access
+5. Check secrets vault access from control plane
+
+---
+
+### Appendix D: Glossary
+
+**Terms and Acronyms:**
+
+- **AD:** Active Directory
+- **API:** Application Programming Interface
+- **AWX:** Open-source version of Ansible Tower
+- **BOM:** Bill of Materials
+- **CAB:** Change Advisory Board
+- **CI/CD:** Continuous Integration / Continuous Deployment
+- **CMDB:** Configuration Management Database
+- **DDD:** Detailed Design Document
+- **DFS-R:** Distributed File System Replication
+- **DR:** Disaster Recovery
+- **DSC:** Desired State Configuration (PowerShell)
+- **ESE:** Extensible Storage Engine (database)
+- **GPO:** Group Policy Object
+- **HA:** High Availability
+- **HSM:** Hardware Security Module
+- **IaC:** Infrastructure as Code
+- **ITSM:** IT Service Management
+- **LCM:** Local Configuration Manager (DSC)
+- **MFA:** Multi-Factor Authentication
+- **MOF:** Managed Object Format (DSC configuration file)
+- **OMI:** Open Management Infrastructure (Linux equivalent of WMI)
+- **PaaS:** Platform as a Service
+- **RBAC:** Role-Based Access Control
+- **RPO:** Recovery Point Objective (acceptable data loss)
+- **RTO:** Recovery Time Objective (acceptable downtime)
+- **SLA:** Service Level Agreement
+- **SOC 2:** Service Organization Control 2 (compliance framework)
+- **SOP:** Standard Operating Procedure
+- **TLS:** Transport Layer Security
+- **TTL:** Time To Live
+- **UAT:** User Acceptance Testing
+- **VIP:** Virtual IP Address (load balancer)
+- **WMF:** Windows Management Framework
+- **WinRM:** Windows Remote Management
+
+---
+
+### Appendix E: Reference Architecture Diagrams
+
+[Inference] The following diagrams would be included in a complete document:
+
+**Diagram 1: Hybrid Pull Model (Blueprint A) - On-Premises Large Tier**
+- Shows load balancer, multiple DSC pull servers, SQL Always On cluster, DFS-R cluster, monitoring stack, and managed nodes
+
+**Diagram 2: Ansible-Native Push Model (Blueprint B) - Cloud Deployment**
+- Shows Ansible Tower/AWX cluster, managed PostgreSQL and Redis, cloud storage, and managed nodes across multiple cloud regions
+
+**Diagram 3: Network Segmentation**
+- Shows management tier, monitoring tier, data tier, and managed node tier with firewall rules
+
+**Diagram 4: Configuration Deployment Flow**
+- Sequence diagram showing developer workstation → Git → CI/CD → Pull Server/Tower → Managed Nodes
+
+**Diagram 5: Secrets Retrieval Flow**
+- Sequence diagram showing automation tool authentication with Vault and secret retrieval
+
+**Diagram 6: Multi-Environment Architecture**
+- Shows separation of dev, test, and production environments with appropriate isolation
+
+**Note:** These diagrams should be created using tools like Microsoft Visio, Lucidchart, Draw.io, or PlantUML and included in the final document as images.
+
+---
+
+### Appendix F: Contact Information & Support
+
+**Infrastructure Architecture Team:**
+- Email: infrastructure-arch@contoso.com
+- Slack: #infrastructure-architecture
+
+**Configuration Management Operations:**
+- Email: config-mgmt-ops@contoso.com
+- Slack: #config-mgmt-ops
+- On-Call: PagerDuty rotation
+
+**Security Team:**
+- Email: security@contoso.com
+- Slack: #security
+- Emergency: security-incident@contoso.com
+
+**Change Advisory Board (CAB):**
+- Meeting Schedule: Weekly, Tuesdays 10:00 AM
+- Email: cab@contoso.com
+- Change Request Submission: ServiceNow portal
+
+---
+
+### Appendix G: Revision History
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2025-10-01 | Adrian Johnson | Initial release |
+| 1.1 | 2025-10-17 | Adrian Johnson | Added monitoring details, clarifications |
+| 2.0 | 2025-10-17 | Adrian Johnson | Complete rewrite with expanded details: network architecture, IAM, data flows, backup strategy, compliance, performance metrics, testing strategy, change management, appendices |
+
+---
+
+## Document End
+
+This specification is a living document and should be reviewed and updated quarterly or whenever significant architectural changes are proposed.
+
+**Next Steps:**
+1. Review and approval by stakeholders
+2. Create Detailed Design Document (DDD) with environment-specific details
+3. Develop implementation plan and timeline
+4. Begin infrastructure provisioning in development environment
+5. Conduct pilot deployment with subset of managed nodes
+6. Iterate based on lessons learned
+7. Scale to full production deployment
+
+**Questions or Feedback:** Contact infrastructure-arch@contoso.com

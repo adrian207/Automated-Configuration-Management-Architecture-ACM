@@ -1,0 +1,68 @@
+# Operating System Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor/IDE Files (project-specific only)
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Cursor Agent Tools
+.cursor/.agent-tools/
+
+# Temporary Files
+*.tmp
+*.bak
+*.log
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+*.tfvars
+terraform.tfvars
+override.tf
+override.tf.json
+
+# Ansible
+*.retry
+.vault_pass
+*.vault
+
+# Sensitive Information  
+*password*
+*secret*
+*credential*
+*.pem
+*.key
+*.pfx
+id_rsa*
+!*.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Node
+node_modules/
+
+# Build artifacts
+dist/
+build/
+
+# Test results
+TestResults.xml
+test-results/
+
+# Backup files
+*.backup
+backup/
