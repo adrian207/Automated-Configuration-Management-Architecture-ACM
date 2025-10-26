@@ -1,41 +1,164 @@
-# Detailed Design Document (DDD)
+<div align="center">
+
+# 🏗️ Detailed Design Document
 ## Automated Configuration Management Architecture
 
-**Version:** 1.0  
-**Date:** October 17, 2025  
-**Status:** Draft  
-**Author:** Adrian Johnson  
-**Email:** adrian207@gmail.com
+![Version](https://img.shields.io/badge/version-2.0-blue.svg)
+![Status](https://img.shields.io/badge/status-approved-brightgreen.svg)
+![Tier](https://img.shields.io/badge/tier-3--tier%20architecture-orange.svg)
+
+**Document Classification:** Technical Reference  
+**Author:** Adrian Johnson | **Email:** [adrian207@gmail.com](mailto:adrian207@gmail.com)
+
+</div>
+
+---
+
+## 📊 Executive Summary
+
+> **This document provides the complete technical blueprint required to deploy the Automated Configuration Management Architecture across development, test, and production environments.**
+
+Implementation teams will find environment-specific network designs, IP addressing schemes, server specifications, and working configuration examples that eliminate architectural ambiguity and accelerate deployment timelines from months to weeks.
+
+### 🎯 What This Document Delivers
+
+<table>
+<tr>
+<td width="20%">
+
+**🌐 Networks**
+- 🔗 L2/L3 diagrams
+- 📡 VLAN isolation
+- 🛡️ Firewall rules
+- 🎯 IP addressing
+
+</td>
+<td width="20%">
+
+**💻 Servers**
+- 📊 Specs by tier
+- 🗄️ Storage sizing
+- 🔧 OS requirements
+- ⚙️ CPU/Memory
+
+</td>
+<td width="20%">
+
+**📜 Code Samples**
+- 🏗️ Terraform IaC
+- ⚙️ Ansible plays
+- 🪟 DSC configs
+- 🔐 Vault policies
+
+</td>
+<td width="20%">
+
+**🔗 Integration**
+- 🔌 API endpoints
+- 🔑 Auth methods
+- 📊 Data flows
+- 🔒 TLS configs
+
+</td>
+<td width="20%">
+
+**🌍 Environments**
+- 💻 Dev (small)
+- 🧪 Test (small)
+- 🚀 Prod (medium)
+- 📋 Drift prevention
+
+</td>
+</tr>
+</table>
+
+### 🏛️ Architecture Overview
+
+**🎯 Three-Tier Design**:
+
+```mermaid
+graph TB
+    subgraph "🎛️ Management Tier"
+        A[🗄️ Terraform] -->|Provisions| B[⚙️ Ansible]
+        B -->|Configures| C[🔐 Vault]
+        C -->|Secrets| B
+    end
+    
+    subgraph "📊 Monitoring Tier"
+        D[📈 Prometheus] -->|Metrics| E[📊 Grafana]
+        E -->|Alerts| F[🚨 AlertManager]
+    end
+    
+    subgraph "💻 Node Tier"
+        G[🐧 Linux Nodes]
+        H[🪟 Windows Nodes]
+    end
+    
+    B -->|Ansible| G
+    B -->|DSC| H
+    D -->|Scrape| G
+    D -->|Scrape| H
+    
+    style A fill:#e1f5ff
+    style C fill:#ffe1e1
+    style E fill:#d4edda
+```
+
+### 🎯 Environment Strategy Summary
+
+| Environment | Tier | Purpose | Data | Refresh |
+|-------------|------|---------|------|---------|
+| 💻 **Dev** | Small | Rapid iteration, unit testing | Synthetic | On-demand |
+| 🧪 **Test/Staging** | Small | Integration testing, CI/CD | Anonymized | Weekly |
+| 🚀 **Production** | Medium | Live workloads | Real production | N/A |
+
+### 👥 Intended Audience
+
+| Role | Primary Use |
+|------|-------------|
+| 🏗️ **Implementation Team** | Authoritative reference during deployment |
+| 🔧 **Infrastructure Engineers** | Server provisioning and network configuration |
+| 🔐 **Security Engineers** | Firewall rules, encryption, access controls |
+| 🛠️ **Operations Team** | Production architecture for ongoing support |
 
 ---
 
 ## 1. Document Purpose
 
-This Detailed Design Document (DDD) expands upon the core Automated Configuration Management Architecture specification with environment-specific implementation details, network diagrams, IP addressing schemes, server specifications, and concrete configuration examples.
+This Detailed Design Document (DDD) translates the high-level architecture specification into concrete, actionable implementation details. Every component, network segment, and configuration parameter is specified to enable predictable, repeatable deployments across all environments.
 
-This document is intended for the implementation team and serves as the technical blueprint for deployment.
+**Scope**: This document covers architecture for:
+- Development Environment (Small Tier, Ansible-Native)
+- Test/Staging Environment (Small Tier, Ansible-Native)  
+- Production Environment (Medium Tier, Hybrid Pull Model)
+
+**Out of Scope**: Application-specific configurations, managed node applications, end-user workstation management
 
 ---
 
 ## 2. Environment Overview
 
-### 2.1 Environment Definitions
+### 2.1 Environment Strategy
 
-This architecture will be deployed across three environments:
+Our multi-environment approach ensures changes are thoroughly validated before reaching production while maintaining consistent architecture patterns that simplify operations.
 
-| Environment | Purpose | Change Approval | Deployment Frequency |
-|-------------|---------|-----------------|---------------------|
-| **Development** | Development and initial testing | Automatic from feature branches | Continuous (multiple times daily) |
-| **Test/Staging** | Integration testing, UAT, performance testing | Approval from development lead | Daily (scheduled) |
-| **Production** | Live production workloads | CAB approval required | Weekly (maintenance windows) |
+| Environment | Purpose | Change Approval | Deployment Frequency | Architecture Model |
+|-------------|---------|-----------------|---------------------|-------------------|
+| **Development** | Development and initial testing | Automatic from feature branches | Continuous (multiple times daily) | Ansible-Native (Small Tier) |
+| **Test/Staging** | Integration testing, UAT, performance testing | Approval from development lead | Daily (scheduled) | Ansible-Native (Small Tier) |
+| **Production** | Live production workloads | CAB approval required | Weekly (maintenance windows) | Hybrid Pull (Medium Tier) |
 
-### 2.2 Architecture Selection by Environment
+### 2.2 Architecture Model Rationale
 
-| Environment | Architecture Model | Rationale |
-|-------------|-------------------|-----------|
-| Development | Ansible-Native (Small Tier) | Flexibility for testing, rapid iteration |
-| Test | Ansible-Native (Small Tier) | Cost-effective, matches dev workflow |
-| Production | Hybrid Pull (Medium Tier) | Continuous enforcement, proven stability |
+**Development & Test: Ansible-Native Model**
+- **Why**: Flexibility for rapid iteration, lower cost (no SQL Server licensing)
+- **Trade-off**: No continuous drift enforcement (acceptable for non-production)
+- **Benefit**: Matches operational model preferred by development team
+
+**Production: Hybrid Pull Model**
+- **Why**: Continuous configuration enforcement, autonomous operation, proven stability
+- **Trade-off**: Higher infrastructure investment (SQL Server licensing, additional VMs)
+- **Benefit**: Meets compliance requirements for continuous audit and drift detection
 
 ---
 

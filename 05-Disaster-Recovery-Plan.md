@@ -1,83 +1,239 @@
-# Disaster Recovery (DR) Plan
+<div align="center">
+
+# 💾 Disaster Recovery Plan
 ## Automated Configuration Management Architecture
 
-**Version:** 1.0  
-**Date:** October 17, 2025  
-**Status:** Draft  
-**Author:** Adrian Johnson  
-**Email:** adrian207@gmail.com
+![Version](https://img.shields.io/badge/version-2.0-blue.svg)
+![Classification](https://img.shields.io/badge/classification-confidential-red.svg)
+![RTO](https://img.shields.io/badge/RTO-1--4%20hours-green.svg)
+![RPO](https://img.shields.io/badge/RPO-1--6%20hours-green.svg)
 
-**Classification:** Confidential - Internal Use Only
+**Document Classification:** Confidential - Business Continuity  
+**Author:** Adrian Johnson | **Email:** [adrian207@gmail.com](mailto:adrian207@gmail.com)
 
----
-
-## 1. Document Purpose
-
-This Disaster Recovery Plan provides comprehensive procedures for recovering the Automated Configuration Management Architecture from catastrophic failures. It defines recovery objectives, procedures, team responsibilities, and testing requirements.
-
-**Target Audience:** DR team, infrastructure engineers, operations management
+</div>
 
 ---
 
-## 2. Executive Summary
+## 📊 Executive Summary
 
-### 2.1 DR Objectives
+> **This Disaster Recovery Plan ensures business continuity of configuration management capabilities with recovery time objectives (RTO) of 1-4 hours and recovery point objectives (RPO) of 1-6 hours across all disaster scenarios.**
 
-This plan ensures:
-- Minimal data loss (RPO targets met)
-- Rapid recovery (RTO targets met)
-- Business continuity during disasters
-- Clear procedures for all disaster scenarios
-- Regular testing and validation
+The plan provides comprehensive recovery procedures for all failure modes—from single component failures to complete regional disasters—with clear responsibilities, detailed procedures, and validated recovery capabilities through quarterly testing.
 
-### 2.2 Scope
+### ⏱️ Recovery Objectives Summary
 
-**In Scope:**
-- All control plane infrastructure (DSC Pull Servers, Ansible AWX, Vault, databases)
-- All supporting infrastructure (monitoring, secrets management)
-- Configuration data and Git repositories
-- Operational procedures and documentation
+**🎯 Critical Components** (RTO: 1-2 hours, RPO: 1-2 hours):
 
-**Out of Scope:**
-- Managed nodes (recovered separately by application teams)
+<table>
+<tr>
+<td width="33%">
+
+**🏰 HashiCorp Vault**
+- ⏱️ RTO: **1 hour**
+- 📊 RPO: **1 hour**
+- 🚨 Priority: **Critical**
+- 💥 Impact: Cannot decrypt secrets
+
+</td>
+<td width="33%">
+
+**📝 Git Repository**
+- ⏱️ RTO: **2 hours**
+- 📊 RPO: **1 hour**
+- 🚨 Priority: **High**
+- 💥 Impact: Cannot deploy changes
+
+</td>
+<td width="33%">
+
+**🎛️ Control Plane**
+- ⏱️ RTO: **4 hours**
+- 📊 RPO: **4-6 hours**
+- 🚨 Priority: **High**
+- 💥 Impact: No config management
+
+</td>
+</tr>
+</table>
+
+**🔄 Recovery Capabilities**:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Component-Level       │  < 5 minutes   │  Automated    │
+│  (Failover)            │                │  failover     │
+├─────────────────────────────────────────────────────────┤
+│  Facility-Level        │  4-8 hours     │  Secondary    │
+│  (Datacenter Failure)  │                │  site restore │
+├─────────────────────────────────────────────────────────┤
+│  Regional-Level        │  8-24 hours    │  Geographic   │
+│  (Natural Disaster)    │                │  DR site      │
+└─────────────────────────────────────────────────────────┘
+```
+
+**💼 Business Impact of Disasters**:
+- ❌ **Without DR**: Inability to enforce configuration compliance, deploy changes, or onboard new nodes
+- ✅ **With DR**: Minimal interruption, automated failover for most scenarios, documented procedures for major events
+
+### 🧪 Testing & Validation
+
+**📅 Quarterly DR Tests**: Full recovery drills validate:
+- ✅ Backup integrity and restore procedures
+- ✅ Team readiness and communication protocols
+- ✅ Recovery time objective achievement
+- ✅ Documentation accuracy and completeness
+
+**📊 Test Schedule**:
+- 🗓️ **Last Test Date**: TBD (schedule quarterly after production deployment)  
+- 🗓️ **Next Test Date**: TBD + 90 days
+
+### 👥 Intended Audience
+
+| Role | Primary Use |
+|------|-------------|
+| 🚨 **DR Team** | Primary responsibility for disaster recovery execution |
+| 🏗️ **Infrastructure Engineers** | Component-specific recovery procedures |
+| 👨‍💼 **Operations Management** | Decision authority for DR activation |
+| 📊 **Business Stakeholders** | Understanding of recovery capabilities and timelines |
+
+---
+
+## 1. Document Purpose and Scope
+
+This Disaster Recovery Plan provides comprehensive procedures for recovering the Configuration Management infrastructure from any failure scenario—from simple component failures to catastrophic regional disasters.
+
+**What This Plan Covers**:
+1. **Recovery Objectives**: RTO and RPO for every component
+2. **Disaster Scenarios**: Classification and response procedures for all failure modes
+3. **Recovery Procedures**: Step-by-step technical procedures with verification steps
+4. **Team Organization**: Roles, responsibilities, and communication protocols
+5. **Testing Requirements**: DR drill procedures and success criteria
+
+**Business Continuity Context**:
+- Configuration Management is a **Tier 1 Critical Service** (must recover within 4 hours)
+- Supports 100% of production infrastructure (1,000+ managed nodes)
+- Required for: Security compliance, change deployment, incident response, new node provisioning
+
+### Scope Definition
+
+**In Scope** (Covered by this DR plan):
+- All control plane infrastructure (DSC Pull Servers, Ansible Tower/AWX, HashiCorp Vault)
+- Supporting infrastructure (monitoring, databases, secrets management)
+- Configuration data, Git repositories, and documentation
+- Operational procedures and runbooks
+
+**Out of Scope** (Covered by separate DR plans):
+- Managed nodes (recovered by application teams using this infrastructure after restoration)
 - End-user workstations
-- General corporate infrastructure
-
-### 2.3 Recovery Objectives Summary
-
-| Component | RTO | RPO | Priority |
-|-----------|-----|-----|----------|
-| HashiCorp Vault | 1 hour | 1 hour | Critical |
-| DSC Pull Server | 4 hours | 4 hours | High |
-| Ansible Tower/AWX | 4 hours | 6 hours | High |
-| SQL Server Database | 4 hours | 4 hours | High |
-| PostgreSQL Database | 4 hours | 6 hours | High |
-| Monitoring Stack | 8 hours | 24 hours | Medium |
-| Git Repository | 2 hours | 1 hour | High |
+- General corporate infrastructure (network, Active Directory, etc.)
+- Application-specific data on managed nodes
 
 ---
 
-## 3. Disaster Scenarios
+## 2. Recovery Objectives
 
-### 3.1 Disaster Classification
+### 2.1 Component-Level Recovery Objectives
 
-**Level 1 - Component Failure**
-- Single server or service failure
-- Single data center component failure
-- Recovery: Restore from backup or failover to redundant component
-- Example: Single DSC Pull Server crashes
+The table below defines Recovery Time Objective (RTO) and Recovery Point Objective (RPO) for each infrastructure component. These objectives drive backup frequency, redundancy requirements, and recovery procedures.
 
-**Level 2 - Facility Failure**
-- Data center outage (power, cooling, connectivity)
-- Major infrastructure failure
-- Recovery: Failover to secondary site if available, or rebuild in cloud
-- Example: Data center fire, flood
+| Component | RTO | RPO | Priority | Impact of Loss | Recovery Method |
+|-----------|-----|-----|----------|----------------|-----------------|
+| **HashiCorp Vault** | 1 hour | 1 hour | Critical | Cannot decrypt secrets; managed nodes cannot authenticate | Automated HA failover (primary); restore from snapshot (secondary) |
+| **DSC Pull Server** | 4 hours | 4 hours | High | Windows nodes cannot pull configurations; drift detection stops | Restore from VM backup; re-register nodes |
+| **Ansible Tower/AWX** | 4 hours | 6 hours | High | Cannot orchestrate changes; automation workflows stopped | Restore from database backup; redeploy containers |
+| **SQL Server (DSC)** | 4 hours | 4 hours | High | DSC Pull Server inoperable; no node status data | Restore from database backup with log shipping |
+| **PostgreSQL (AWX)** | 4 hours | 6 hours | High | Ansible Tower inoperable; job history lost | Restore from database backup |
+| **Prometheus/Grafana** | 8 hours | 24 hours | Medium | No metrics or dashboards; alerting stopped | Restore from VM backup; reconfigure data sources |
+| **Git Repository** | 2 hours | 1 hour | High | Cannot deploy configuration changes; no version control | Restore from git mirror or cloud backup |
+| **Monitoring (Prometheus)** | 8 hours | 24 hours | Medium | Visibility loss; no metrics or alerting | Redeploy from IaC; historic data loss acceptable |
 
-**Level 3 - Regional Failure**
-- Natural disaster affecting entire region
-- Extended cloud provider outage
-- Recovery: Failover to geographically separate location
-- Example: Hurricane, earthquake, major cloud outage
+**RTO Definitions**:
+- **RTO (Recovery Time Objective)**: Maximum acceptable downtime from disaster declaration to service restoration
+- **RPO (Recovery Point Objective)**: Maximum acceptable data loss measured in time (e.g., 4-hour RPO = can lose up to 4 hours of data)
+
+**Priority Classifications**:
+- **Critical**: Must recover within 1-2 hours (immediate business impact)
+- **High**: Must recover within 4 hours (significant operational impact)
+- **Medium**: Must recover within 8 hours (degraded operations acceptable temporarily)
+
+### 2.2 Service-Level Recovery Objectives
+
+**End-to-End Service Restoration Timeline**:
+
+| Recovery Milestone | Target Time | Description |
+|-------------------|-------------|-------------|
+| **Disaster Declaration** | T+0 | Incident confirmed as disaster; DR plan activated |
+| **Team Assembly** | T+15 min | DR team assembled; roles assigned; initial assessment |
+| **Vault Restoration** | T+1 hour | Vault operational; secrets accessible |
+| **Git Repository** | T+2 hours | Configuration code accessible for deployment |
+| **Control Plane (DSC/Ansible)** | T+4 hours | Configuration management operational; can deploy changes |
+| **Database Services** | T+4 hours | SQL Server / PostgreSQL operational; data restored |
+| **Monitoring Restoration** | T+8 hours | Prometheus, Grafana operational; alerting functional |
+| **Full Service Validation** | T+8-12 hours | All components tested; managed nodes reconnected |
+
+---
+
+## 3. Disaster Scenarios & Classification
+
+### 3.1 Disaster Classification Matrix
+
+Disasters are classified into three levels based on scope and impact. Classification determines response procedures and escalation requirements.
+
+**Level 1: Component Failure** (Localized)
+- **Scope**: Single server, service, or infrastructure component fails
+- **Examples**: 
+  - DSC Pull Server VM crashes
+  - Database instance failure (with HA standby available)
+  - Network switch failure
+  - Single disk failure
+- **Recovery Approach**: Failover to redundant component OR restore from backup
+- **Typical RTO**: 15 minutes (automated failover) to 4 hours (restore from backup)
+- **Authority**: Operations team handles recovery; notify management
+
+**Level 2: Facility Failure** (Datacenter/Regional)
+- **Scope**: Entire datacenter or availability zone unavailable
+- **Examples**:
+  - Data center power outage (>4 hours)
+  - Data center fire, flood, or physical damage
+  - Complete loss of datacenter connectivity
+  - Cloud provider availability zone failure
+- **Recovery Approach**: Failover to secondary site OR rebuild in alternate location
+- **Typical RTO**: 4-8 hours (secondary site available) to 24 hours (rebuild required)
+- **Authority**: Requires management approval; follow business continuity plan
+
+**Level 3: Regional Failure** (Geographic)
+- **Scope**: Entire geographic region affected (natural disaster, major cloud outage)
+- **Examples**:
+  - Hurricane, earthquake, or major natural disaster
+  - Extended cloud provider regional outage
+  - Widespread infrastructure failure affecting multiple datacenters
+- **Recovery Approach**: Geographic failover to distant DR site
+- **Typical RTO**: 8-24 hours (DR site pre-provisioned) to 72 hours (rebuild from scratch)
+- **Authority**: Executive leadership approval required; invoke business continuity plan
+
+### 3.2 Disaster Declaration Criteria
+
+**When to Declare a Disaster** (activate this DR plan):
+
+1. **Critical component unavailable** for >30 minutes with no immediate fix
+2. **Multiple components failed** simultaneously indicating systemic issue
+3. **Data loss detected** that cannot be recovered from recent backups
+4. **Facility inaccessible** (physical access denied or unsafe)
+5. **Recovery time will exceed 4 hours** using standard troubleshooting
+
+**Authority to Declare Disaster**:
+- **Business Hours**: Operations Manager or Infrastructure Director
+- **After Hours**: On-call Incident Commander or backup contact
+
+**Declaration Process**:
+1. On-call engineer assesses situation and recommends disaster declaration
+2. Operations Manager (or backup) confirms and officially declares disaster
+3. DR team paged via mass notification (PagerDuty, phone tree)
+4. Incident bridge opened for coordination
+5. Status page updated (internal stakeholders notified)
+
+---
 
 **Level 4 - Cyber Attack**
 - Ransomware, data breach, coordinated attack

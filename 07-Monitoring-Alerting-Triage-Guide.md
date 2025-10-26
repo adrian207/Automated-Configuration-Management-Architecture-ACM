@@ -1,49 +1,391 @@
-# Monitoring & Alerting Triage Guide
+<div align="center">
+
+# 🚨 Monitoring, Alerting & Triage Guide
 ## Automated Configuration Management Architecture
 
-**Version:** 1.0  
-**Date:** October 17, 2025  
-**Status:** Draft  
-**Author:** Adrian Johnson  
-**Email:** adrian207@gmail.com
+![Version](https://img.shields.io/badge/version-2.0-blue.svg)
+![Status](https://img.shields.io/badge/status-production%20ready-brightgreen.svg)
+![SLA](https://img.shields.io/badge/response-15min%20critical-red.svg)
+
+**Document Classification:** Operational Procedures - On-Call Reference  
+**Author:** Adrian Johnson | **Email:** [adrian207@gmail.com](mailto:adrian207@gmail.com)
+
+</div>
 
 ---
 
-## 1. Document Purpose
+## 📊 Executive Summary
 
-This Monitoring & Alerting Triage Guide provides the on-call team with detailed procedures for responding to alerts from the Configuration Management infrastructure. It includes alert descriptions, severity levels, diagnostic steps, resolution procedures, and escalation paths.
+> **This Monitoring & Alerting Triage Guide provides on-call engineers with comprehensive incident response procedures, diagnostic workflows, and resolution steps for all Configuration Management infrastructure alerts.**
 
-**Target Audience:** On-call engineers, operations team, NOC staff
+On-call teams using this guide achieve:
+- ⚡ **Rapid Response**: Meet SLA targets (15 min critical, 1 hour high severity)
+- 🎯 **Effective Triage**: Systematic diagnostic procedures eliminate guesswork
+- ✅ **Consistent Resolution**: Proven resolution steps for 95%+ of common alerts
+- 📞 **Proper Escalation**: Clear criteria for when to engage additional expertise
+- 📈 **Continuous Improvement**: Post-incident reviews documented for pattern analysis
+
+### ⏱️ Alert Response Framework
+
+**Severity-Based Response Times**:
+
+<table>
+<tr>
+<td width="25%">
+
+**🔴 Critical**
+- ⏱️ 15 minutes
+- 🚨 Service down
+- 💥 Data loss imminent
+
+</td>
+<td width="25%">
+
+**🟠 High**
+- ⏱️ 1 hour
+- ⚠️ Major degradation
+- 📉 Significant impact
+
+</td>
+<td width="25%">
+
+**🟡 Warning**
+- ⏱️ 4 hours
+- 🔍 Potential issue
+- 📊 Investigation needed
+
+</td>
+<td width="25%">
+
+**🟢 Info**
+- ⏱️ Next business day
+- ℹ️ Informational
+- ✅ No action required
+
+</td>
+</tr>
+</table>
+
+**📊 Alert Volume Expectations**:
+- ✅ **Normal Operations**: 0-2 Critical alerts/month, 5-10 Warning alerts/week
+- 🚀 **During Deployment**: Increased Info/Warning alerts expected (planned changes)
+- 🎯 **Alert Accuracy**: <5% false positive rate (well-tuned thresholds)
+
+### 📈 Monitoring Stack Overview
+
+**🏗️ Monitoring Architecture**:
+```
+┌─────────────┐     ┌────────────┐     ┌──────────────┐     ┌──────────────┐
+│   Managed   │────▶│    Node    │────▶│  Prometheus  │────▶│ Alertmanager │
+│    Nodes    │     │  Exporters │     │              │     │              │
+└─────────────┘     └────────────┘     └──────┬───────┘     └──────┬───────┘
+                                              │                     │
+                                              ▼                     ▼
+                                       ┌─────────────┐      ┌──────────────┐
+                                       │   Grafana   │      │  PagerDuty   │
+                                       │  Dashboards │      │ Slack/Email  │
+                                       └─────────────┘      └──────────────┘
+```
+
+**📊 Key Dashboards**:
+1. 🏥 **Control Plane Health**: Overall system status, component availability
+2. 🖥️ **Node Fleet Status**: Node check-ins, configuration success rates, drift detection
+3. 📊 **Performance Metrics**: CPU, memory, disk, network utilization
+4. 🔐 **Security Dashboard**: Failed authentication attempts, unauthorized access, audit log review
+
+### 👥 Intended Audience
+
+| Role | Primary Use |
+|------|-------------|
+| 🚨 **On-Call Engineers** | Primary incident responders (24/7 rotation) |
+| 🛠️ **Operations Team** | Day-time support and escalation point |
+| 📊 **NOC Staff** | Initial alert triage and assessment |
+| 🏗️ **Infrastructure Engineers** | Escalation for complex infrastructure issues |
+| 👨‍💼 **Management** | Understanding of incident response capabilities |
 
 ---
 
-## 2. Alert Response Framework
+## 1. 📖 Document Purpose and Usage
 
-### 2.1 Alert Severity Levels
+This Triage Guide is the **authoritative reference** for responding to monitoring alerts from the Configuration Management infrastructure. It provides structured procedures to:
 
-| Severity | Response Time | Description | Examples |
-|----------|--------------|-------------|----------|
-| **Critical** | 15 minutes | Service down, data loss imminent | Control plane unreachable, Vault sealed |
-| **High** | 1 hour | Major degradation, customer impact | High error rate, performance degraded |
-| **Warning** | 4 hours | Potential issue, investigation needed | Disk space low, drift rate increasing |
-| **Info** | Next business day | Informational, no action required | Successful deployment, scheduled maintenance |
+<table>
+<tr>
+<td width="50%">
 
-### 2.2 Response Procedures
+**🎯 Core Functions**
+1. ✅ **Acknowledge and Assess**: Rapidly determine alert validity and actual impact
+2. 🔍 **Diagnose**: Systematic troubleshooting to identify root cause
+3. 🔧 **Resolve**: Step-by-step resolution with verification
+4. 📞 **Escalate**: Clear criteria for engaging additional resources
+5. 📝 **Document**: Capture actions for post-incident review
 
-**For Every Alert:**
-1. **Acknowledge:** Acknowledge alert in monitoring system within response time
-2. **Assess:** Determine actual severity and impact
-3. **Investigate:** Follow diagnostic procedures in this guide
-4. **Act:** Execute resolution steps or escalate
-5. **Document:** Log all actions taken
-6. **Resolve:** Close alert once issue resolved
-7. **Follow-up:** Post-incident review for Critical/High alerts
+</td>
+<td width="50%">
 
-**Escalation Criteria:**
-- Unable to resolve within 2x response time
-- Issue beyond your expertise
-- Requires approval for potentially disruptive action
-- Security incident suspected
+**📚 Usage Scenarios**
+- 🚨 **During Active Incident**: Find alert by name, follow diagnostic steps
+- 👨‍🎓 **During Onboarding**: Read entire document, practice in test environment
+- 🔄 **Post-Incident Review**: Update guide with lessons learned
+- 📊 **Training**: Shadow experienced engineer for at least one shift
+
+</td>
+</tr>
+</table>
+
+### 🚀 How to Use This Guide
+
+```mermaid
+graph TD
+    A[🚨 Receive Alert] -->|Acknowledge| B[🔍 Find Alert in Guide]
+    B -->|Section 3-6| C[📋 Follow Diagnostics]
+    C -->|Identify Issue| D[🔧 Execute Resolution]
+    D -->|Verify| E[✅ Close Alert]
+    E --> F[📝 Document Incident]
+    
+    style A fill:#ffe1e1
+    style C fill:#fff4e1
+    style E fill:#e1ffe1
+```
+
+---
+
+## 2. 🔄 Alert Response Framework
+
+### 2.1 Standard Response Procedure
+
+> **Every alert follows this standardized workflow** (regardless of severity):
+
+```
+1️⃣ ACKNOWLEDGE → 2️⃣ ASSESS → 3️⃣ INVESTIGATE → 4️⃣ ACT → 5️⃣ DOCUMENT → 6️⃣ RESOLVE → 7️⃣ FOLLOW-UP
+```
+
+<details>
+<summary><b>Step 1: Acknowledge (Within SLA Time)</b></summary>
+
+- 🔐 Log into monitoring system (Prometheus/Grafana/Alertmanager)
+- ✅ Acknowledge alert to prevent duplicate pages
+- 📝 Note timestamp of acknowledgment
+- 🎫 Update incident ticket status to "In Progress"
+
+</details>
+
+<details>
+<summary><b>Step 2: Assess Actual Impact</b></summary>
+
+- ✅ Verify alert is genuine (not false positive)
+- 🎯 Determine actual vs. perceived impact
+- 🔗 Check if multiple related alerts (correlated incident)
+- 📊 Assess number of users/nodes affected
+- ⚖️ Re-prioritize severity if needed
+
+</details>
+
+<details>
+<summary><b>Step 3: Investigate Root Cause</b></summary>
+
+- 📋 Follow diagnostic procedures in this guide (Sections 3-6)
+- 🔄 Check recent changes (deployments, configuration updates)
+- 📝 Review system logs and metrics
+- ⏱️ Determine if issue is transient or persistent
+
+</details>
+
+<details>
+<summary><b>Step 4: Act on Findings</b></summary>
+
+- 🔧 Execute resolution steps from this guide
+- 📞 If no documented procedure, engage escalation
+- 🚨 For Critical issues: Notify management immediately
+- 🔄 Implement temporary workaround if full fix not possible
+
+</details>
+
+<details>
+<summary><b>Step 5: Document Actions</b></summary>
+
+- 💻 Log all commands executed
+- 📊 Capture output and error messages
+- ⏱️ Record timeline of actions
+- 📝 Note any deviations from documented procedures
+
+</details>
+
+<details>
+<summary><b>Step 6: Resolve Alert</b></summary>
+
+- ✅ Verify resolution fixed the issue
+- 📊 Confirm monitoring shows healthy status
+- 🔒 Close alert in monitoring system
+- 🎫 Update incident ticket with resolution details
+
+</details>
+
+<details>
+<summary><b>Step 7: Follow-Up (For Critical/High Severity)</b></summary>
+
+- 📅 Schedule post-incident review within 48 hours
+- 📖 Update documentation based on lessons learned
+- 🔄 Identify preventive measures or automation opportunities
+- 👥 Share findings with team
+
+</details>
+
+### 2.2 Severity Definitions and Response Requirements
+
+#### 🔴 **Critical Severity**
+
+<table>
+<tr>
+<td width="50%">
+
+**📋 Definition**
+Service completely unavailable OR data loss imminent OR security breach suspected
+
+**🚨 Examples**
+- 🏰 HashiCorp Vault sealed (all secrets inaccessible)
+- 🖥️ DSC Pull Server unreachable (0% nodes can pull)
+- 🗄️ SQL Server database down (control plane inoperable)
+- 💾 Data corruption detected
+- 🔐 Security breach or unauthorized access
+
+</td>
+<td width="50%">
+
+**⏱️ Response Requirements**
+- ✅ **Acknowledge**: Within **15 minutes**
+- 🔧 **Initial Response**: On-call engineer actively working
+- 📞 **Escalation**: If not resolved in 30 min, escalate to senior
+- 👨‍💼 **Management**: Immediate notification
+- 📊 **Status Updates**: Every 30 minutes until resolved
+- 📝 **Post-Incident**: Mandatory within 48 hours
+
+</td>
+</tr>
+</table>
+
+#### 🟠 **High Severity**
+
+<table>
+<tr>
+<td width="50%">
+
+**📋 Definition**
+Major service degradation OR significant impact to managed nodes OR component failure without redundancy
+
+**⚠️ Examples**
+- 📉 Configuration run failure rate >5%
+- ⚡ Control plane performance degraded >50%
+- 🖥️ Single DSC Pull Server down (redundancy available)
+- 📊 High memory/CPU utilization (>90% sustained)
+- 💾 Backup job failures
+
+</td>
+<td width="50%">
+
+**⏱️ Response Requirements**
+- ✅ **Acknowledge**: Within **1 hour**
+- 🔍 **Initial Response**: Begin diagnostic procedures
+- 📞 **Escalation**: If not resolved in 2 hours, escalate
+- 👨‍💼 **Management**: Within 1 hour of acknowledgment
+- 📊 **Status Updates**: Every 2 hours until resolved
+- 📝 **Post-Incident**: Recommended within 1 week
+
+</td>
+</tr>
+</table>
+
+#### 🟡 **Warning Severity**
+
+<table>
+<tr>
+<td width="50%">
+
+**📋 Definition**
+Potential issue requiring investigation OR resource utilization approaching thresholds
+
+**⚠️ Examples**
+- 💾 Disk space <30% free
+- 📈 Configuration drift rate increasing
+- 📉 Node check-in rate declining
+- 🔒 Certificate expiring within 30 days
+- ⚠️ Non-critical service degradation
+
+</td>
+<td width="50%">
+
+**⏱️ Response Requirements**
+- ✅ **Acknowledge**: Within **4 business hours**
+- 🔍 **Investigation**: During normal business hours
+- 📞 **Escalation**: If issue worsening
+- 👨‍💼 **Management**: If issue persists >24 hours
+- 📊 **Status Updates**: Daily summary if ongoing
+
+</td>
+</tr>
+</table>
+
+#### 🟢 **Info Severity**
+
+**📋 Definition**: Informational notification, no action required
+
+**ℹ️ Examples**: Successful deployment, Scheduled maintenance completed, Backup successful, Normal system events
+
+**⏱️ Response**: Not required (auto-acknowledged), Review during next day health check
+
+### 2.3 Escalation Criteria and Procedures
+
+**📞 When to Escalate** (engage additional resources):
+
+<table>
+<tr>
+<td width="50%">
+
+**🎯 Escalation Triggers**
+1. ⏱️ **Unable to resolve within defined timeframe**
+   - Critical: >30 minutes actively troubleshooting
+   - High: >2 hours actively troubleshooting
+   - Warning: Issue worsening or becoming High/Critical
+
+2. 🤔 **Issue beyond your expertise**
+   - Requires deep knowledge of specific component
+   - Database-level troubleshooting needed
+   - Network/infrastructure issue outside control
+
+</td>
+<td width="50%">
+
+**🎯 Additional Triggers**
+3. ✋ **Requires approval for disruptive action**
+   - Restart production control plane
+   - Make configuration changes in production
+   - Emergency change without CAB approval
+
+4. 🔐 **Security incident suspected**
+   - Unauthorized access detected
+   - Anomalous activity patterns
+   - Potential data breach
+
+</td>
+</tr>
+</table>
+
+**📋 Escalation Contacts**:
+
+| Role | Responsibility | Business Hours | After Hours |
+|------|----------------|----------------|-------------|
+| 👨‍💻 **Senior Operations Engineer** | Complex troubleshooting, architecture decisions | 📞 Direct call/Slack | 📟 PagerDuty escalation |
+| 🗄️ **Database Administrator** | SQL Server, PostgreSQL issues | 🎫 Ticket assignment | 📟 PagerDuty (Critical only) |
+| 🔐 **Security Engineer** | Security incidents, Vault issues | 📞 Direct call/Slack | 📟 PagerDuty (Critical only) |
+| 🏗️ **Infrastructure Lead** | Infrastructure decisions, vendor escalation | 📞 Direct call/Slack | 📟 PagerDuty escalation |
+| 👨‍💼 **Operations Manager** | Management decision authority | 📞 Direct call | 📞 On-call phone |
+
+**🔄 Escalation Procedure**:
+1. 📝 Document current situation, steps taken, and reason for escalation
+2. 📟 Use PagerDuty escalation policy OR direct contact (depending on severity/time)
+3. 💬 Provide brief summary: "What happened, what you've tried, what you need"
+4. 🤝 Remain available to assist (don't hand off completely unless instructed)
+5. 🎫 Update incident ticket with escalation details
 
 ---
 
@@ -51,33 +393,188 @@ This Monitoring & Alerting Triage Guide provides the on-call team with detailed 
 
 ### Alert: DSC Pull Server Down
 
-**Alert Name:** `ConfigMgmt_PullServer_Down`  
-**Severity:** Critical  
-**Trigger:** Pull server not responding to health check for 5 minutes  
-**Impact:** Nodes cannot pull configurations, drift detection stopped
+**Alert Name**: `ConfigMgmt_DSC_PullServer_Down`  
+**Severity**: Critical  
+**Trigger Condition**: DSC Pull Server not responding to health check for 5 consecutive minutes  
+**Business Impact**: Windows nodes cannot pull configurations; drift detection stopped; no new node onboarding
 
-#### Symptoms
-- Pull server URL returns connection refused or timeout
-- Nodes failing to check in
-- Monitoring shows pull server target DOWN
+#### Symptoms Observed
 
-#### Diagnostic Steps
+- Pull server URL (https://dsc.corp.contoso.com) returns connection refused or timeout
+- Nodes reporting errors in event logs: "Unable to contact pull server"
+- Monitoring shows pull server target DOWN in Prometheus
+- Grafana dashboard shows 0% pull server availability
 
-**Step 1: Verify Alert Validity**
+#### Diagnostic Procedure
+
+**Step 1: Verify Alert Validity (2 minutes)**
+
 ```bash
-# Test pull server endpoint
+# Test pull server endpoint from monitoring server
 curl -I https://dsc.corp.contoso.com/PSDSCPullServer.svc
 
-# Expected: HTTP 200 OK
-# If connection refused/timeout, alert is valid
+# Expected Output: HTTP/1.1 200 OK
+# If Connection Refused/Timeout: Alert is valid, proceed
+# If HTTP 200: False alarm, check monitoring configuration
 ```
 
-**Step 2: Check Server Availability**
+**Step 2: Check Server Availability (3 minutes)**
+
 ```powershell
 # Ping pull server
-Test-NetConnection dsc-01.corp.contoso.com
+Test-NetConnection dsc-01.corp.contoso.com -Port 443
 
-# If unreachable, check hypervisor/cloud console for VM status
+# Expected: TcpTestSucceeded : True
+# If False: Server unreachable, check hypervisor/cloud console
+
+# Check if VM is running (Azure example)
+az vm get-instance-view --resource-group RG-ConfigMgmt-Prod --name dsc-01 --query "instanceView.statuses[?starts_with(code, 'PowerState/')].displayStatus" -o tsv
+
+# Expected: VM running
+# If "VM stopped" or "VM deallocated": Proceed to Step 3
+```
+
+**Step 3: Check IIS and DSC Service Status (5 minutes)**
+
+```powershell
+# RDP or SSH to pull server (if accessible)
+# Check IIS status
+Get-Service W3SVC | Select-Object Name, Status, StartType
+
+# Expected: Status = Running, StartType = Automatic
+# If Stopped: Proceed to Resolution Step 1
+
+# Check DSC Service
+Get-Service DSCService | Select-Object Name, Status, StartType
+
+# Check Application Pool status
+Import-Module WebAdministration
+Get-WebAppPoolState -Name "PSDSCPullServer"
+
+# Expected: Started
+# If Stopped: Check IIS logs for errors
+```
+
+**Step 4: Check System Resources (if server accessible) (3 minutes)**
+
+```powershell
+# Check disk space
+Get-PSDrive C | Select-Object Used, Free
+
+# Expected: >20 GB free
+# If low disk: Disk space issue (see Resolution Step 4)
+
+# Check CPU and Memory
+Get-Counter '\Processor(_Total)\% Processor Time', '\Memory\Available MBytes'
+
+# Expected: CPU <80%, Memory >1 GB available
+```
+
+---
+
+#### Resolution Procedures
+
+**Resolution 1: Restart IIS and DSC Services** (Low-risk, try first)
+
+```powershell
+# Connect to pull server
+# Restart IIS
+iisreset /restart
+
+# Wait 30 seconds
+Start-Sleep -Seconds 30
+
+# Test endpoint
+Invoke-WebRequest -Uri "https://dsc.corp.contoso.com/PSDSCPullServer.svc" -UseBasicParsing
+
+# If still down, restart DSC Service
+Restart-Service DSCService -Force
+
+# Verify services running
+Get-Service W3SVC, DSCService | Select-Object Name, Status
+```
+
+**Verification**: 
+- Pull server URL returns HTTP 200
+- Prometheus shows target UP
+- Test node can pull configuration
+
+**Resolution 2: Restart VM** (If services won't start)
+
+```powershell
+# Azure example (adapt for your environment)
+az vm restart --resource-group RG-ConfigMgmt-Prod --name dsc-01 --no-wait
+
+# Wait 5 minutes for VM to boot
+Start-Sleep -Seconds 300
+
+# Verify services auto-started
+Test-NetConnection dsc-01.corp.contoso.com -Port 443
+```
+
+**Verification**: Same as Resolution 1
+
+**Resolution 3: Failover to Secondary Pull Server** (If primary won't recover)
+
+```powershell
+# Update load balancer to remove failed primary from pool
+# (Manual step in load balancer UI or via CLI)
+
+# Azure Load Balancer example:
+az network lb rule update \
+  --resource-group RG-ConfigMgmt-Prod \
+  --lb-name LB-DSC-Prod \
+  --name DSC-HTTP-Rule \
+  --backend-pool-name DSC-Backend-Pool \
+  # Remove dsc-01 from backend pool
+
+# Verify traffic routing to secondary
+curl -I https://dsc.corp.contoso.com/PSDSCPullServer.svc
+# Should now resolve to dsc-02.corp.contoso.com
+
+# Engage team to restore primary server
+```
+
+**Verification**:
+- Pull server URL returns HTTP 200
+- Nodes successfully pulling configurations
+- Monitor primary server restoration progress
+
+**Resolution 4: Clear Disk Space** (If disk full)
+
+```powershell
+# Connect to pull server
+# Check IIS logs size
+Get-ChildItem C:\inetpub\logs\LogFiles -Recurse | Measure-Object -Property Length -Sum
+
+# If large (>10 GB), archive and delete old logs
+$OldLogs = Get-ChildItem C:\inetpub\logs\LogFiles -Recurse -File | Where-Object {$_.LastWriteTime -lt (Get-Date).AddDays(-30)}
+$OldLogs | Compress-Archive -DestinationPath "E:\Backup\IIS-Logs-$(Get-Date -Format 'yyyyMMdd').zip"
+$OldLogs | Remove-Item -Force
+
+# Check DSC log directory
+Get-ChildItem E:\DSC\Logs -Recurse | Measure-Object -Property Length -Sum
+
+# Clean up old MOF files (if disk space critical)
+Get-ChildItem C:\Program Files\WindowsPowerShell\DscService\Configuration -Recurse -File | 
+  Where-Object {$_.LastWriteTime -lt (Get-Date).AddDays(-90)} | Remove-Item -Force
+
+# Restart IIS
+iisreset /restart
+```
+
+**Verification**: Pull server responding, disk space >20 GB free
+
+#### Escalation Criteria
+
+- Unable to restart services after 2 attempts
+- VM won't boot after restart
+- Disk space cannot be freed (requires infrastructure expansion)
+- Corruption suspected (requires restore from backup)
+
+**Escalate To**: Senior Operations Engineer (if infrastructure issue) OR Database Administrator (if database connectivity issue)
+
+---
 # Azure example:
 az vm get-instance-view --name dsc-01-prod --resource-group rg-prod --query instanceView.statuses
 ```
