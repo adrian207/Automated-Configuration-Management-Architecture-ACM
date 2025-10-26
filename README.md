@@ -102,7 +102,7 @@ Proven architecture supporting **10 to 10,000+ managed nodes**
 <td width="5%">📋</td>
 <td width="95%">
 
-**[Architecture Specification](Report%20Automated%20Configuration%20Management%20Architecture.txt)**
+**[Architecture Specification](docs/Report%20Automated%20Configuration%20Management%20Architecture.txt)**
 
 **Purpose:** Complete architectural vision and requirements  
 **Audience:** C-level executives, architects, stakeholders  
@@ -114,7 +114,7 @@ Proven architecture supporting **10 to 10,000+ managed nodes**
 <td>🏗️</td>
 <td>
 
-**[Detailed Design Document](01-Detailed-Design-Document.md)**
+**[Detailed Design Document](docs/01-Detailed-Design-Document.md)**
 
 **Purpose:** Technical blueprint for implementation  
 **Audience:** Implementation team, infrastructure engineers  
@@ -131,7 +131,7 @@ Proven architecture supporting **10 to 10,000+ managed nodes**
 <td width="5%">🚀</td>
 <td width="95%">
 
-**[Implementation Plan & Runbook](02-Implementation-Plan-Runbook.md)**
+**[Implementation Plan & Runbook](docs/02-Implementation-Plan-Runbook.md)**
 
 **Purpose:** Step-by-step deployment procedures  
 **Audience:** DevOps engineers, system administrators  
@@ -144,7 +144,7 @@ Proven architecture supporting **10 to 10,000+ managed nodes**
 <td>🔧</td>
 <td>
 
-**[Operations Manual & SOPs](03-Operations-Manual-SOPs.md)**
+**[Operations Manual & SOPs](docs/03-Operations-Manual-SOPs.md)**
 
 **Purpose:** Day-to-day operational procedures  
 **Audience:** Operations engineers, on-call team  
@@ -156,7 +156,7 @@ Proven architecture supporting **10 to 10,000+ managed nodes**
 <td>✅</td>
 <td>
 
-**[Test Plan](06-Test-Plan.md)**
+**[Test Plan](docs/06-Test-Plan.md)**
 
 **Purpose:** Comprehensive testing strategy  
 **Audience:** QA engineers, implementation team  
@@ -173,7 +173,7 @@ Proven architecture supporting **10 to 10,000+ managed nodes**
 <td width="5%">🔐</td>
 <td width="95%">
 
-**[Security Plan & Hardening Guide](04-Security-Plan-Hardening-Guide.md)**
+**[Security Plan & Hardening Guide](docs/04-Security-Plan-Hardening-Guide.md)**
 
 **Purpose:** Security controls and compliance mapping  
 **Audience:** Security engineers, compliance officers  
@@ -185,7 +185,7 @@ Proven architecture supporting **10 to 10,000+ managed nodes**
 <td>💾</td>
 <td>
 
-**[Disaster Recovery Plan](05-Disaster-Recovery-Plan.md)**
+**[Disaster Recovery Plan](docs/05-Disaster-Recovery-Plan.md)**
 
 **Purpose:** Business continuity and recovery procedures  
 **Audience:** DR team, operations management  
@@ -197,7 +197,7 @@ Proven architecture supporting **10 to 10,000+ managed nodes**
 <td>🚨</td>
 <td>
 
-**[Monitoring & Alerting Triage Guide](07-Monitoring-Alerting-Triage-Guide.md)**
+**[Monitoring & Alerting Triage Guide](docs/07-Monitoring-Alerting-Triage-Guide.md)**
 
 **Purpose:** On-call incident response procedures  
 **Audience:** On-call engineers, NOC staff  
@@ -268,9 +268,9 @@ graph LR
 <details>
 <summary><b>📖 Phase 1: Planning (Week 0)</b></summary>
 
-1. ✅ Review [Architecture Specification](Report%20Automated%20Configuration%20Management%20Architecture.txt)
+1. ✅ Review [Architecture Specification](docs/Report%20Automated%20Configuration%20Management%20Architecture.txt)
 2. ✅ Select architecture model (Hybrid Pull or Ansible-Native)
-3. ✅ Review [Detailed Design Document](01-Detailed-Design-Document.md)
+3. ✅ Review [Detailed Design Document](docs/01-Detailed-Design-Document.md)
 4. ✅ Customize design for your environment
 
 </details>
@@ -278,9 +278,9 @@ graph LR
 <details>
 <summary><b>🔨 Phase 2: Development Environment (Weeks 1-2)</b></summary>
 
-1. 🚀 Follow [Implementation Plan](02-Implementation-Plan-Runbook.md) Section 3
+1. 🚀 Follow [Implementation Plan](docs/02-Implementation-Plan-Runbook.md) Section 3
 2. 🏗️ Deploy Ansible-Native architecture in dev environment
-3. ✅ Execute test plans from [Test Plan](06-Test-Plan.md)
+3. ✅ Execute test plans from [Test Plan](docs/06-Test-Plan.md)
 4. 📊 Validate monitoring and alerting
 
 </details>
@@ -288,7 +288,7 @@ graph LR
 <details>
 <summary><b>🧪 Phase 3: Test/Staging Environment (Weeks 3-4)</b></summary>
 
-1. 🚀 Follow [Implementation Plan](02-Implementation-Plan-Runbook.md) Section 4
+1. 🚀 Follow [Implementation Plan](docs/02-Implementation-Plan-Runbook.md) Section 4
 2. 🏗️ Deploy to test environment
 3. 🔗 Conduct integration testing
 4. ✅ Perform user acceptance testing (UAT)
@@ -298,10 +298,10 @@ graph LR
 <details>
 <summary><b>🏭 Phase 4: Production Environment (Weeks 5-7)</b></summary>
 
-1. 🚀 Follow [Implementation Plan](02-Implementation-Plan-Runbook.md) Section 5
+1. 🚀 Follow [Implementation Plan](docs/02-Implementation-Plan-Runbook.md) Section 5
 2. 🏗️ Deploy production infrastructure
-3. 🔐 Implement security hardening per [Security Plan](04-Security-Plan-Hardening-Guide.md)
-4. 📊 Configure monitoring per [Monitoring Guide](07-Monitoring-Alerting-Triage-Guide.md)
+3. 🔐 Implement security hardening per [Security Plan](docs/04-Security-Plan-Hardening-Guide.md)
+4. 📊 Configure monitoring per [Monitoring Guide](docs/07-Monitoring-Alerting-Triage-Guide.md)
 
 </details>
 
@@ -311,7 +311,7 @@ graph LR
 1. 🎬 Pilot rollout to 10% of nodes (Week 8)
 2. 📊 Monitor and address issues
 3. 🚀 Phased rollout to remaining nodes (Weeks 9-10)
-4. 💾 Conduct DR testing per [Disaster Recovery Plan](05-Disaster-Recovery-Plan.md)
+4. 💾 Conduct DR testing per [Disaster Recovery Plan](docs/05-Disaster-Recovery-Plan.md)
 
 </details>
 
@@ -620,7 +620,7 @@ Automated-Configuration-Management-Architecture-ACM/
 
 **Additional Requirements**:
 - ⚖️ Load balancer with SSL termination
-- 🔥 Firewall rules (documented in [Detailed Design](01-Detailed-Design-Document.md))
+- 🔥 Firewall rules (documented in [Detailed Design](docs/01-Detailed-Design-Document.md))
 - 🌐 DNS entries for control plane services
 - 🔒 TLS certificates (wildcard or per-service)
 
@@ -672,21 +672,21 @@ Automated-Configuration-Management-Architecture-ACM/
 
 **❓ Implementation Questions**
 - Review relevant documentation
-- Check [Operations Manual](03-Operations-Manual-SOPs.md)
-- Search [Triage Guide](07-Monitoring-Alerting-Triage-Guide.md)
+- Check [Operations Manual](docs/03-Operations-Manual-SOPs.md)
+- Search [Triage Guide](docs/07-Monitoring-Alerting-Triage-Guide.md)
 
 </td>
 <td width="33%">
 
 **🏗️ Architecture Decisions**
-- Consult [Architecture Spec](Report%20Automated%20Configuration%20Management%20Architecture.txt)
-- Review [Design Document](01-Detailed-Design-Document.md)
+- Consult [Architecture Spec](docs/Report%20Automated%20Configuration%20Management%20Architecture.txt)
+- Review [Design Document](docs/01-Detailed-Design-Document.md)
 
 </td>
 <td width="33%">
 
 **🔐 Security Concerns**
-- Follow [Security Plan](04-Security-Plan-Hardening-Guide.md)
+- Follow [Security Plan](docs/04-Security-Plan-Hardening-Guide.md)
 - Escalate per incident response procedures
 
 </td>
