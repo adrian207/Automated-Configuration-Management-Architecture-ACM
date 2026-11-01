@@ -107,7 +107,7 @@ jobs:
         working-directory: terraform/environments/dev
 
       - name: Upload Plan
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: tfplan-dev
           path: terraform/environments/dev/tfplan
@@ -128,7 +128,7 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
 
       - name: Download Plan
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: tfplan-dev
           path: terraform/environments/dev
@@ -147,7 +147,7 @@ jobs:
         id: outputs
         run: |
           terraform output -json > outputs.json
-          echo "outputs=$(cat outputs.json)" >> $GITHUB_OUTPUT
+          echo "outputs=$(jq -c . outputs.json)" >> "$GITHUB_OUTPUT"
         working-directory: terraform/environments/dev
 
   terraform-plan-prod:
@@ -176,7 +176,7 @@ jobs:
         working-directory: terraform/environments/prod
 
       - name: Upload Plan
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: tfplan-prod
           path: terraform/environments/prod/tfplan
@@ -197,7 +197,7 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
 
       - name: Download Plan
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: tfplan-prod
           path: terraform/environments/prod
@@ -218,6 +218,7 @@ jobs:
         with:
           status: ${{ job.status }}
           text: 'Production infrastructure deployed successfully'
-          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
 
 
