@@ -40,7 +40,8 @@ jobs:
         continue-on-error: true
 
       - name: Run ansible-lint
-        run: ansible-lint ansible/
+        working-directory: ansible
+        run: ansible-lint
         continue-on-error: true
 
   ansible-syntax-check:

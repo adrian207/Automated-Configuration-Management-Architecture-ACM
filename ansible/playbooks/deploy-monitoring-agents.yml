@@ -1,0 +1,73 @@
+---
+# Monitoring Agents Playbook
+# Author: Adrian Johnson <adrian207@gmail.com>
+# Description: Installs Node Exporter (Linux) and windows_exporter (Windows), then writes the
+#              Prometheus file-based service discovery targets for them
+
+- name: Install Node Exporter on Linux hosts
+  hosts: all:!windows_nodes:!dsc_pull_servers
+  become: true
+  tags:
+    - agents
+  roles:
+    - node_exporter
+
+- name: Install windows_exporter on Windows hosts
+  hosts: windows_nodes:dsc_pull_servers
+  tags:
+    - agents
+  vars:
+    windows_exporter_version: "0.29.2"
+    windows_exporter_msi: "windows_exporter-{{ windows_exporter_version }}-amd64.msi"
+  tasks:
+    - name: Download windows_exporter
+      ansible.windows.win_get_url:
+        url: "https://github.com/prometheus-community/windows_exporter/releases/download/v{{ windows_exporter_version }}/{{ windows_exporter_msi }}"
+        dest: "C:\\Windows\\Temp\\{{ windows_exporter_msi }}"
+
+    - name: Install windows_exporter
+      ansible.windows.win_package:
+        path: "C:\\Windows\\Temp\\{{ windows_exporter_msi }}"
+        arguments: LISTEN_PORT=9182
+        state: present
+
+    - name: Allow Prometheus to scrape windows_exporter
+      community.windows.win_firewall_rule:
+        name: windows_exporter (TCP 9182)
+        localport: 9182
+        protocol: tcp
+        direction: in
+        action: allow
+        state: present
+        enabled: true
+
+- name: Write Prometheus scrape targets
+  hosts: prometheus_servers
+  become: true
+  tags:
+    - agents
+  vars:
+    linux_hosts: "{{ groups['all'] | difference(groups['windows_nodes'] | default([])) | difference(groups['dsc_pull_servers'] | default([])) }}"
+    windows_hosts: "{{ (groups['windows_nodes'] | default([])) + (groups['dsc_pull_servers'] | default([])) }}"
+  tasks:
+    - name: Write Linux node targets
+      ansible.builtin.template:
+        src: templates/sd-targets.json.j2
+        dest: /etc/prometheus/targets/linux-nodes.json
+        owner: prometheus
+        group: prometheus
+        mode: '0644'
+      vars:
+        sd_hosts: "{{ linux_hosts }}"
+        sd_port: 9100
+
+    - name: Write Windows node targets
+      ansible.builtin.template:
+        src: templates/sd-targets.json.j2
+        dest: /etc/prometheus/targets/windows-nodes.json
+        owner: prometheus
+        group: prometheus
+        mode: '0644'
+      vars:
+        sd_hosts: "{{ windows_hosts }}"
+        sd_port: 9182

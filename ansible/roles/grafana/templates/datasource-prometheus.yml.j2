@@ -1,0 +1,9 @@
+# Grafana datasource provisioning - Managed by Ansible
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: {{ grafana_prometheus_url }}
+    isDefault: true
+    editable: false

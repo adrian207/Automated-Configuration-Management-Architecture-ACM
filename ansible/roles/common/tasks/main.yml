@@ -10,7 +10,7 @@
     - timezone
 
 - name: Update system packages
-  ansible.builtin.package:
+  ansible.builtin.package:  # noqa: package-latest  (full patching is intended)
     name: "*"
     state: latest
   when: ansible_os_family in ['Debian', 'RedHat']
@@ -75,7 +75,7 @@
 - name: Disable SELinux (for lab environments)
   ansible.posix.selinux:
     state: disabled
-  when: ansible_os_family == 'RedHat' and environment != 'prod'
+  when: ansible_os_family == 'RedHat' and env_name != 'prod'
   tags:
     - common
     - selinux
@@ -104,9 +104,8 @@
     - directories
 
 - name: Install Node Exporter for monitoring
-  ansible.builtin.include_tasks: install-node-exporter.yml
+  ansible.builtin.include_role:
+    name: node_exporter
   tags:
     - common
     - monitoring
-
-

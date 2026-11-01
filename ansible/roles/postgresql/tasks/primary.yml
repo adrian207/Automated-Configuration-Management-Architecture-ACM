@@ -1,0 +1,57 @@
+---
+- name: Start PostgreSQL
+  ansible.builtin.systemd:
+    name: "{{ postgresql_service }}"
+    state: started
+    enabled: true
+
+- name: Apply configuration before creating users
+  ansible.builtin.meta: flush_handlers
+
+- name: Create the replication user
+  community.postgresql.postgresql_user:
+    name: "{{ postgresql_replication_user }}"
+    password: "{{ postgresql_replication_password }}"
+    role_attr_flags: REPLICATION,LOGIN
+  become: true
+  become_user: postgres
+  no_log: true
+
+- name: Create the monitoring user
+  community.postgresql.postgresql_user:
+    name: "{{ postgresql_exporter_user }}"
+    password: "{{ postgres_exporter_password }}"
+  become: true
+  become_user: postgres
+  no_log: true
+
+- name: Grant pg_monitor to the monitoring user
+  community.postgresql.postgresql_membership:
+    groups: pg_monitor
+    target_roles: "{{ postgresql_exporter_user }}"
+  become: true
+  become_user: postgres
+
+- name: Create application users
+  community.postgresql.postgresql_user:
+    name: "{{ item.owner }}"
+    password: "{{ item.password }}"
+  loop: "{{ postgresql_databases }}"
+  become: true
+  become_user: postgres
+  no_log: true
+
+- name: Create application databases
+  community.postgresql.postgresql_db:
+    name: "{{ item.name }}"
+    owner: "{{ item.owner }}"
+  loop: "{{ postgresql_databases }}"
+  become: true
+  become_user: postgres
+
+- name: Create a replication slot for each replica
+  community.postgresql.postgresql_slot:
+    name: "{{ hostvars[item]['postgresql_replication_slot'] }}"
+  loop: "{{ postgresql_replica_names }}"
+  become: true
+  become_user: postgres

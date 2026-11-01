@@ -54,23 +54,6 @@
       loop:
         - 9100  # Node Exporter
       when: ansible_os_family == 'RedHat'
-      ignore_errors: true
+      failed_when: false  # firewalld may not be installed on every image
 
-- name: Register Linux Nodes with Prometheus
-  hosts: prometheus_servers
-  become: true
-  tasks:
-    - name: Add Linux nodes to Prometheus targets
-      ansible.builtin.lineinfile:
-        path: /etc/prometheus/targets/linux-nodes.json
-        line: '  {"targets": ["{{ item }}:9100"], "labels": {"job": "node", "env": "{{ environment }}"}},'
-        insertbefore: '^]$'
-        create: true
-      loop: "{{ groups['linux_nodes'] | map('extract', hostvars, 'ansible_host') | list }}"
-
-    - name: Reload Prometheus configuration
-      ansible.builtin.systemd:
-        name: prometheus
-        state: reloaded
-
-
+# Prometheus scrape targets for these nodes are written by deploy-monitoring-agents.yml

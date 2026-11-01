@@ -1,0 +1,55 @@
+# Alertmanager configuration - Managed by Ansible
+global:
+  resolve_timeout: 5m
+{% if alertmanager_smtp_smarthost | length > 0 %}
+  smtp_smarthost: '{{ alertmanager_smtp_smarthost }}'
+  smtp_from: '{{ alertmanager_smtp_from }}'
+{% if alertmanager_smtp_username | length > 0 %}
+  smtp_auth_username: '{{ alertmanager_smtp_username }}'
+  smtp_auth_password: '{{ alertmanager_smtp_password }}'
+{% endif %}
+{% endif %}
+
+route:
+  receiver: default
+  group_by: ['alertname', 'instance']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - receiver: critical
+      matchers:
+        - severity = "critical"
+      repeat_interval: 1h
+
+inhibit_rules:
+  # A critical alert silences the warning-level alert of the same name on the same instance
+  - source_matchers:
+      - severity = "critical"
+    target_matchers:
+      - severity = "warning"
+    equal: ['alertname', 'instance']
+
+receivers:
+  - name: default
+{% if alertmanager_email_to | length > 0 and alertmanager_smtp_smarthost | length > 0 %}
+    email_configs:
+      - to: '{{ alertmanager_email_to }}'
+        send_resolved: true
+{% endif %}
+{% if alertmanager_webhook_url | length > 0 %}
+    webhook_configs:
+      - url: '{{ alertmanager_webhook_url }}'
+        send_resolved: true
+{% endif %}
+  - name: critical
+{% if alertmanager_email_to | length > 0 and alertmanager_smtp_smarthost | length > 0 %}
+    email_configs:
+      - to: '{{ alertmanager_email_to }}'
+        send_resolved: true
+{% endif %}
+{% if alertmanager_webhook_url | length > 0 %}
+    webhook_configs:
+      - url: '{{ alertmanager_webhook_url }}'
+        send_resolved: true
+{% endif %}

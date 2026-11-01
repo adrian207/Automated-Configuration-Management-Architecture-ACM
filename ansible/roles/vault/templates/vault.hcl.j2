@@ -1,0 +1,39 @@
+# Vault configuration - Managed by Ansible
+cluster_name  = "{{ vault_cluster_name }}"
+ui            = {{ vault_ui | lower }}
+# Recommended with integrated storage
+disable_mlock = true
+
+storage "raft" {
+  path    = "{{ vault_data_dir }}"
+  node_id = "{{ inventory_hostname_short }}"
+{% for host in groups['vault_cluster'] if host != inventory_hostname %}
+
+  retry_join {
+    leader_api_addr = "{{ vault_scheme }}://{{ hostvars[host]['ansible_host'] }}:{{ vault_api_port }}"
+  }
+{% endfor %}
+}
+
+listener "tcp" {
+  address         = "0.0.0.0:{{ vault_api_port }}"
+  cluster_address = "0.0.0.0:{{ vault_cluster_port }}"
+{% if vault_tls_disable | bool %}
+  tls_disable     = 1
+{% else %}
+  tls_cert_file   = "{{ vault_tls_cert_file }}"
+  tls_key_file    = "{{ vault_tls_key_file }}"
+{% endif %}
+
+  telemetry {
+    unauthenticated_metrics_access = {{ vault_unauthenticated_metrics | lower }}
+  }
+}
+
+api_addr     = "{{ vault_scheme }}://{{ ansible_host }}:{{ vault_api_port }}"
+cluster_addr = "https://{{ ansible_host }}:{{ vault_cluster_port }}"
+
+telemetry {
+  prometheus_retention_time = "30s"
+  disable_hostname          = true
+}

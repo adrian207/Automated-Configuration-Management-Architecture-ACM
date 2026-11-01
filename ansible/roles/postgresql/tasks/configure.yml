@@ -1,0 +1,76 @@
+---
+- name: Create conf.d
+  ansible.builtin.file:
+    path: "{{ postgresql_conf_dir }}/conf.d"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: '0750'
+
+- name: Create a self-signed TLS certificate
+  ansible.builtin.command: >-
+    openssl req -new -x509 -days 3650 -nodes -subj "/CN={{ inventory_hostname }}"
+    -out {{ postgresql_conf_dir }}/server.crt -keyout {{ postgresql_conf_dir }}/server.key
+  args:
+    creates: "{{ postgresql_conf_dir }}/server.crt"
+
+- name: Set certificate ownership and permissions
+  ansible.builtin.file:
+    path: "{{ postgresql_conf_dir }}/{{ item.name }}"
+    owner: postgres
+    group: postgres
+    mode: "{{ item.mode }}"
+  loop:
+    - { name: server.crt, mode: '0644' }
+    - { name: server.key, mode: '0600' }
+
+- name: Write PostgreSQL settings
+  ansible.builtin.template:
+    src: 90-acm.conf.j2
+    dest: "{{ postgresql_conf_dir }}/conf.d/90-acm.conf"
+    owner: postgres
+    group: postgres
+    mode: '0640'
+  notify: Restart postgresql
+
+- name: Allow replication connections
+  community.postgresql.postgresql_pg_hba:
+    dest: "{{ postgresql_conf_dir }}/pg_hba.conf"
+    contype: hostssl
+    databases: replication
+    users: "{{ postgresql_replication_user }}"
+    source: "{{ postgresql_replication_network }}"
+    method: scram-sha-256
+  notify: Reload postgresql
+
+- name: Allow application connections
+  community.postgresql.postgresql_pg_hba:
+    dest: "{{ postgresql_conf_dir }}/pg_hba.conf"
+    contype: hostssl
+    databases: "{{ item.0.name }}"
+    users: "{{ item.0.owner }}"
+    source: "{{ item.1 }}"
+    method: scram-sha-256
+  loop: "{{ postgresql_databases | product(postgresql_client_networks) | list }}"
+  notify: Reload postgresql
+
+- name: Open firewall for PostgreSQL and the exporter
+  ansible.posix.firewalld:
+    port: "{{ item }}/tcp"
+    permanent: true
+    state: enabled
+    immediate: true
+  loop:
+    - "{{ postgresql_port }}"
+    - "{{ postgresql_exporter_port }}"
+  when: ansible_os_family == 'RedHat'
+
+- name: Allow the local exporter connection
+  community.postgresql.postgresql_pg_hba:
+    dest: "{{ postgresql_conf_dir }}/pg_hba.conf"
+    contype: hostssl
+    databases: postgres
+    users: "{{ postgresql_exporter_user }}"
+    source: 127.0.0.1/32
+    method: scram-sha-256
+  notify: Reload postgresql

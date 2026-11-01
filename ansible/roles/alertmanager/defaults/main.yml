@@ -1,0 +1,15 @@
+---
+alertmanager_version: "0.27.0"
+alertmanager_arch: amd64
+alertmanager_port: 9093
+alertmanager_config_dir: /etc/alertmanager
+alertmanager_data_dir: /var/lib/alertmanager
+# Notifications. With neither set, alerts are kept in Alertmanager only.
+alertmanager_email_to: ""            # e.g. ops@contoso.com
+alertmanager_smtp_smarthost: ""      # e.g. smtp.contoso.com:587
+alertmanager_smtp_from: "alertmanager@{{ domain }}"
+alertmanager_smtp_username: ""
+alertmanager_smtp_password: ""
+alertmanager_webhook_url: ""         # e.g. a Teams or Slack incoming webhook relay
+alertmanager_release: "https://github.com/prometheus/alertmanager/releases/download/v{{ alertmanager_version }}"
+alertmanager_url: "{{ alertmanager_release }}/alertmanager-{{ alertmanager_version }}.linux-{{ alertmanager_arch }}.tar.gz"

@@ -52,19 +52,12 @@
     dest: "/etc/prometheus/{{ item }}"
     owner: prometheus
     group: prometheus
+    mode: '0644'
+    directory_mode: '0755'
     remote_src: true
   loop:
     - consoles
     - console_libraries
-
-- name: Create Prometheus configuration
-  ansible.builtin.template:
-    src: prometheus.yml.j2
-    dest: /etc/prometheus/prometheus.yml
-    owner: prometheus
-    group: prometheus
-    mode: '0644'
-  notify: restart prometheus
 
 - name: Create Prometheus alert rules
   ansible.builtin.template:
@@ -73,7 +66,18 @@
     owner: prometheus
     group: prometheus
     mode: '0644'
-  notify: reload prometheus
+    validate: /usr/local/bin/promtool check rules %s
+  notify: Reload prometheus
+
+- name: Create Prometheus configuration
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: /etc/prometheus/prometheus.yml
+    owner: prometheus
+    group: prometheus
+    mode: '0644'
+    validate: /usr/local/bin/promtool check config --syntax-only %s
+  notify: Restart prometheus
 
 - name: Create Prometheus systemd service
   ansible.builtin.copy:
@@ -95,6 +99,7 @@
         --web.console.templates=/etc/prometheus/consoles \
         --web.console.libraries=/etc/prometheus/console_libraries \
         --web.listen-address=0.0.0.0:9090
+      ExecReload=/bin/kill -HUP $MAINPID
       Restart=always
       RestartSec=5
 
@@ -125,5 +130,3 @@
   loop:
     - /tmp/prometheus.tar.gz
     - "/tmp/prometheus-{{ prometheus_version }}.linux-amd64"
-
-

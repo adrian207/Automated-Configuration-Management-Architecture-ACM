@@ -60,15 +60,11 @@ write_files:
         path = "/opt/vault/data"
         node_id = "vault-${node_id}"
         
+        %{ for ip in vault_ips ~}
         retry_join {
-          leader_api_addr = "http://10.10.10.20:8200"
+          leader_api_addr = "http://${ip}:8200"
         }
-        retry_join {
-          leader_api_addr = "http://10.10.10.21:8200"
-        }
-        retry_join {
-          leader_api_addr = "http://10.10.10.22:8200"
-        }
+        %{ endfor ~}
       }
       
       listener "tcp" {

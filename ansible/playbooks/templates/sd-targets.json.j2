@@ -1,0 +1,12 @@
+[
+  {
+    "targets": [
+{% for host in sd_hosts %}
+      "{{ hostvars[host]['ansible_host'] | default(host) }}:{{ sd_port }}"{{ "," if not loop.last else "" }}
+{% endfor %}
+    ],
+    "labels": {
+      "env": "{{ env_name }}"
+    }
+  }
+]

@@ -2,6 +2,7 @@
 # Author: Adrian Johnson <adrian207@gmail.com>
 # Managed by Ansible
 
+{% raw %}
 groups:
   - name: infrastructure_alerts
     interval: 30s
@@ -110,5 +111,4 @@ groups:
         annotations:
           summary: "PostgreSQL has too many connections on {{ $labels.instance }}"
           description: "PostgreSQL connections are above 80% of max on {{ $labels.instance }}."
-
-
+{% endraw %}

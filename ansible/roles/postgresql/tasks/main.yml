@@ -1,0 +1,24 @@
+---
+# PostgreSQL Role - primary and streaming replicas, plus postgres_exporter
+# Author: Adrian Johnson <adrian207@gmail.com>
+# Set postgresql_role to "primary" or "replica" per host (see the inventory).
+
+- name: Load OS-specific settings
+  ansible.builtin.include_vars: "{{ ansible_os_family }}.yml"
+
+- name: Install PostgreSQL
+  ansible.builtin.include_tasks: "install-{{ ansible_os_family }}.yml"
+
+- name: Configure PostgreSQL
+  ansible.builtin.include_tasks: configure.yml
+
+- name: Set up the primary
+  ansible.builtin.include_tasks: primary.yml
+  when: postgresql_role == 'primary'
+
+- name: Set up a replica
+  ansible.builtin.include_tasks: replica.yml
+  when: postgresql_role == 'replica'
+
+- name: Install postgres_exporter
+  ansible.builtin.include_tasks: exporter.yml

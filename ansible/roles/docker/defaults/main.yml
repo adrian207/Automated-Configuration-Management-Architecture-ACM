@@ -1,0 +1,10 @@
+---
+# Docker Engine from Docker's own package repository
+docker_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+# Users added to the docker group (for example the Ansible user)
+docker_users: []

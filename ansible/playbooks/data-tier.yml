@@ -1,0 +1,35 @@
+---
+# Data Tier Deployment Playbook
+# Author: Adrian Johnson <adrian207@gmail.com>
+# Description: PostgreSQL primary and streaming replica (Grafana's database), with postgres_exporter
+
+- name: Group PostgreSQL nodes by role
+  hosts: postgresql_cluster
+  gather_facts: false
+  tags:
+    - data
+    - postgres
+  tasks:
+    - name: Add each node to postgresql_primary or postgresql_replica
+      ansible.builtin.group_by:
+        key: "postgresql_{{ postgresql_role }}"
+
+- name: Deploy the PostgreSQL primary
+  hosts: postgresql_primary
+  become: true
+  tags:
+    - data
+    - postgres
+  roles:
+    - common
+    - postgresql
+
+- name: Deploy PostgreSQL replicas
+  hosts: postgresql_replica
+  become: true
+  tags:
+    - data
+    - postgres
+  roles:
+    - common
+    - postgresql

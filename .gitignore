@@ -66,3 +66,6 @@ test-results/
 # Backup files
 *.backup
 backup/
+
+# Ansible secrets (create from vaulted.yml.example and encrypt with ansible-vault)
+ansible/inventory/*/group_vars/all/vaulted.yml

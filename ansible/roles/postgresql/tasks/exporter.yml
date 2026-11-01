@@ -1,0 +1,77 @@
+---
+- name: Create postgres_exporter user
+  ansible.builtin.user:
+    name: postgres_exporter
+    shell: /bin/false
+    system: true
+    create_home: false
+
+- name: Check installed postgres_exporter version
+  ansible.builtin.command: /usr/local/bin/postgres_exporter --version
+  register: postgresql_exporter_installed
+  changed_when: false
+  failed_when: false
+
+- name: Install postgres_exporter {{ postgresql_exporter_version }}
+  when: postgresql_exporter_version not in (postgresql_exporter_installed.stdout | default('') + postgresql_exporter_installed.stderr | default(''))
+  vars:
+    pge_dir: "/tmp/postgres_exporter-{{ postgresql_exporter_version }}.linux-{{ postgresql_exporter_arch }}"
+  block:
+    - name: Download postgres_exporter
+      ansible.builtin.unarchive:
+        src: "{{ postgresql_exporter_url }}"
+        dest: /tmp
+        remote_src: true
+
+    - name: Install postgres_exporter binary
+      ansible.builtin.copy:
+        src: "{{ pge_dir }}/postgres_exporter"
+        dest: /usr/local/bin/postgres_exporter
+        mode: '0755'
+        remote_src: true
+      notify: Restart postgres_exporter
+
+    - name: Remove download
+      ansible.builtin.file:
+        path: "{{ pge_dir }}"
+        state: absent
+
+- name: Write postgres_exporter connection settings
+  ansible.builtin.copy:
+    content: "DATA_SOURCE_NAME=postgresql://{{ pge_credentials }}@127.0.0.1:{{ postgresql_port }}/postgres?sslmode=require\n"
+    dest: /etc/default/postgres_exporter
+    owner: postgres_exporter
+    group: postgres_exporter
+    mode: '0600'
+  vars:
+    pge_credentials: "{{ postgresql_exporter_user }}:{{ postgres_exporter_password | urlencode }}"
+  notify: Restart postgres_exporter
+  no_log: true
+
+- name: Create postgres_exporter systemd service
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Prometheus PostgreSQL Exporter
+      After=network-online.target {{ postgresql_service }}.service
+
+      [Service]
+      User=postgres_exporter
+      Group=postgres_exporter
+      EnvironmentFile=/etc/default/postgres_exporter
+      ExecStart=/usr/local/bin/postgres_exporter --web.listen-address=:{{ postgresql_exporter_port }}
+      Restart=on-failure
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/postgres_exporter.service
+    mode: '0644'
+  notify: Restart postgres_exporter
+
+- name: Enable and start postgres_exporter
+  ansible.builtin.systemd:
+    name: postgres_exporter
+    state: started
+    enabled: true
+    daemon_reload: true

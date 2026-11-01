@@ -38,6 +38,8 @@ resource "azurerm_subnet" "management" {
   resource_group_name  = azurerm_resource_group.main.name
   virtual_network_name = azurerm_virtual_network.main.name
   address_prefixes     = [var.subnet_management]
+  # Required for the Key Vault network rule below
+  service_endpoints = ["Microsoft.KeyVault"]
 }
 
 resource "azurerm_subnet" "monitoring" {
@@ -45,6 +47,8 @@ resource "azurerm_subnet" "monitoring" {
   resource_group_name  = azurerm_resource_group.main.name
   virtual_network_name = azurerm_virtual_network.main.name
   address_prefixes     = [var.subnet_monitoring]
+  # Required for the Key Vault network rule below
+  service_endpoints = ["Microsoft.KeyVault"]
 }
 
 resource "azurerm_subnet" "data" {
@@ -52,6 +56,8 @@ resource "azurerm_subnet" "data" {
   resource_group_name  = azurerm_resource_group.main.name
   virtual_network_name = azurerm_virtual_network.main.name
   address_prefixes     = [var.subnet_data]
+  # Required for the Key Vault network rule below
+  service_endpoints = ["Microsoft.KeyVault"]
 }
 
 resource "azurerm_subnet" "nodes" {
@@ -211,6 +217,7 @@ resource "azurerm_linux_virtual_machine" "vault" {
   custom_data = base64encode(templatefile("${path.module}/cloud-init/vault.yaml", {
     node_id     = count.index + 1
     environment = var.environment
+    vault_ips   = [for i in range(var.vault_node_count) : cidrhost(var.subnet_management, 20 + i)]
   }))
 }
 

@@ -2,19 +2,18 @@
 # Prometheus Role Handlers
 # Author: Adrian Johnson <adrian207@gmail.com>
 
-- name: restart prometheus
+- name: Restart prometheus
   ansible.builtin.systemd:
     name: prometheus
     state: restarted
 
-- name: reload prometheus
+- name: Reload prometheus
   ansible.builtin.systemd:
     name: prometheus
     state: reloaded
 
-- name: validate prometheus config
+- name: Validate prometheus config
   ansible.builtin.command: /usr/local/bin/promtool check config /etc/prometheus/prometheus.yml
   register: prometheus_config_check
+  changed_when: false
   failed_when: prometheus_config_check.rc != 0
-
-

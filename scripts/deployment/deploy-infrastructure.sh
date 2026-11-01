@@ -56,8 +56,8 @@ check_prerequisites() {
 }
 
 validate_environment() {
-    if [[ ! "$ENVIRONMENT" =~ ^(dev|test|prod)$ ]]; then
-        error "Invalid environment: $ENVIRONMENT (must be dev, test, or prod)"
+    if [[ ! "$ENVIRONMENT" =~ ^(dev|prod)$ ]]; then
+        error "Invalid environment: $ENVIRONMENT (must be dev or prod)"
     fi
     
     info "Deploying to environment: $ENVIRONMENT"
@@ -185,6 +185,19 @@ deploy_data_tier() {
     success "Data tier deployed"
 }
 
+deploy_monitoring_agents() {
+    log "Deploying monitoring agents and Prometheus targets..."
+
+    cd "$PROJECT_ROOT/ansible"
+
+    ansible-playbook \
+        -i "inventory/$ENVIRONMENT/hosts.yml" \
+        playbooks/deploy-monitoring-agents.yml \
+        || error "Monitoring agent deployment failed"
+
+    success "Monitoring agents deployed"
+}
+
 run_validation() {
     log "Running deployment validation..."
     
@@ -234,8 +247,9 @@ main() {
     generate_ansible_inventory
     ansible_ping
     deploy_management_tier
+    deploy_data_tier        # Grafana keeps its data in PostgreSQL, so before monitoring
     deploy_monitoring_tier
-    deploy_data_tier
+    deploy_monitoring_agents
     
     # Validation
     run_validation

@@ -25,15 +25,15 @@ on:
         type: choice
         options:
           - dev
-          - test
           - prod
 
 env:
-  TF_VERSION: '1.6.0'
+  TF_VERSION: '1.9.8'  # 1.7+ is needed for the mock provider in the module tests
   ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
   ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
   ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  TF_VAR_windows_admin_password: ${{ secrets.WINDOWS_ADMIN_PASSWORD }}
 
 jobs:
   terraform-validate:
@@ -52,13 +52,20 @@ jobs:
         run: terraform fmt -check -recursive
         working-directory: terraform/
 
-      - name: Terraform Init (Dev)
-        run: terraform init -backend=false
-        working-directory: terraform/environments/dev
+      - name: Terraform Validate (dev and prod)
+        run: |
+          for env in dev prod; do
+            echo "== $env"
+            terraform -chdir=environments/$env init -backend=false -input=false
+            terraform -chdir=environments/$env validate
+          done
+        working-directory: terraform/
 
-      - name: Terraform Validate
-        run: terraform validate
-        working-directory: terraform/environments/dev
+      - name: Module tests (plan with a mocked Azure provider)
+        run: |
+          terraform init -backend=false -input=false
+          terraform test
+        working-directory: terraform/modules/azure
 
   terraform-security-scan:
     name: Security Scan
@@ -85,7 +92,10 @@ jobs:
     name: Plan - Dev
     runs-on: ubuntu-latest
     needs: [terraform-validate, terraform-security-scan]
-    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev')
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/develop') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev')
     environment: dev
     steps:
       - name: Checkout code
@@ -95,6 +105,11 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Write SSH public key for the VMs
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PUBLIC_KEY }}" > ~/.ssh/id_rsa.pub
 
       - name: Terraform Init
         run: |
@@ -116,7 +131,8 @@ jobs:
     name: Apply - Dev
     runs-on: ubuntu-latest
     needs: terraform-plan-dev
-    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    # Apply only when started by hand (Actions > Terraform Deploy > Run workflow > dev)
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'
     environment: dev
     steps:
       - name: Checkout code
@@ -132,6 +148,11 @@ jobs:
         with:
           name: tfplan-dev
           path: terraform/environments/dev
+
+      - name: Write SSH public key for the VMs
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PUBLIC_KEY }}" > ~/.ssh/id_rsa.pub
 
       - name: Terraform Init
         run: |
@@ -154,7 +175,9 @@ jobs:
     name: Plan - Prod
     runs-on: ubuntu-latest
     needs: [terraform-validate, terraform-security-scan]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod')
     environment: prod
     steps:
       - name: Checkout code
@@ -164,6 +187,11 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Write SSH public key for the VMs
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PUBLIC_KEY }}" > ~/.ssh/id_rsa.pub
 
       - name: Terraform Init
         run: |
@@ -185,7 +213,8 @@ jobs:
     name: Apply - Prod
     runs-on: ubuntu-latest
     needs: terraform-plan-prod
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # Apply only when started by hand (Actions > Terraform Deploy > Run workflow > prod)
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
     environment: prod-approval
     steps:
       - name: Checkout code
@@ -201,6 +230,11 @@ jobs:
         with:
           name: tfplan-prod
           path: terraform/environments/prod
+
+      - name: Write SSH public key for the VMs
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PUBLIC_KEY }}" > ~/.ssh/id_rsa.pub
 
       - name: Terraform Init
         run: |

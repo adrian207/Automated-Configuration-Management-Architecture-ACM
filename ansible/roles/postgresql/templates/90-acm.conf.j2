@@ -1,0 +1,16 @@
+# PostgreSQL settings - Managed by Ansible
+listen_addresses = '*'
+port = {{ postgresql_port }}
+max_connections = {{ postgresql_max_connections }}
+
+# Streaming replication
+wal_level = replica
+max_wal_senders = 10
+max_replication_slots = 10
+wal_keep_size = '1GB'
+hot_standby = on
+
+# TLS (Grafana connects with sslmode=require)
+ssl = on
+ssl_cert_file = '{{ postgresql_conf_dir }}/server.crt'
+ssl_key_file = '{{ postgresql_conf_dir }}/server.key'

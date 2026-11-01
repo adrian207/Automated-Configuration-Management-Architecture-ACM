@@ -95,9 +95,9 @@ variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)
   default = {
-    project     = "config-management"
-    managed_by  = "terraform"
-    owner       = "adrian.johnson@contoso.com"
+    project    = "config-management"
+    managed_by = "terraform"
+    owner      = "adrian.johnson@contoso.com"
   }
 }
 
@@ -114,3 +114,78 @@ variable "enable_monitoring" {
 }
 
 
+
+# --- Additional services -------------------------------------------------------------
+
+variable "dsc_node_count" {
+  description = "Number of Windows DSC pull servers"
+  type        = number
+  default     = 2
+}
+
+variable "awx_enabled" {
+  description = "Create the AWX VM (k3s + AWX Operator, installed by Ansible)"
+  type        = bool
+  default     = true
+}
+
+variable "vm_size_awx" {
+  description = "VM size for AWX (k3s and AWX need about 4 vCPU and 16 GB)"
+  type        = string
+  default     = "Standard_D4s_v3"
+}
+
+variable "vm_size_alertmanager" {
+  description = "VM size for Alertmanager"
+  type        = string
+  default     = "Standard_B2s"
+}
+
+variable "postgres_node_count" {
+  description = "Number of PostgreSQL VMs (first is the primary, the rest replicas)"
+  type        = number
+  default     = 2
+}
+
+variable "vm_size_data" {
+  description = "VM size for PostgreSQL"
+  type        = string
+  default     = "Standard_D2s_v3"
+}
+
+variable "linux_node_count" {
+  description = "Number of RHEL managed nodes to create in the nodes subnet"
+  type        = number
+  default     = 0
+}
+
+variable "windows_node_count" {
+  description = "Number of Windows managed nodes to create in the nodes subnet"
+  type        = number
+  default     = 0
+}
+
+variable "vm_size_node" {
+  description = "VM size for managed nodes"
+  type        = string
+  default     = "Standard_B2s"
+}
+
+variable "windows_admin_username" {
+  description = "Local administrator for Windows VMs (matches ansible_user in the inventory)"
+  type        = string
+  default     = "azureadmin"
+}
+
+variable "windows_admin_password" {
+  description = "Local administrator password for Windows VMs; required when any are created"
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
+variable "backup_retention_days" {
+  description = "Daily backups to keep when enable_backup is true"
+  type        = number
+  default     = 30
+}

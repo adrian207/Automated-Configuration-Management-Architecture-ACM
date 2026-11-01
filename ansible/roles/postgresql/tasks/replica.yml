@@ -1,0 +1,45 @@
+---
+- name: Find the primary
+  ansible.builtin.set_fact:
+    postgresql_primary_host: "{{ hostvars[postgresql_primary_name]['ansible_host'] }}"
+
+- name: Check whether this node is already a standby
+  ansible.builtin.stat:
+    path: "{{ postgresql_data_dir }}/standby.signal"
+  register: postgresql_standby_signal
+
+- name: Clone the primary
+  when: not postgresql_standby_signal.stat.exists
+  block:
+    - name: Stop PostgreSQL
+      ansible.builtin.systemd:
+        name: "{{ postgresql_service }}"
+        state: stopped
+      failed_when: false
+
+    - name: Remove the empty data directory
+      ansible.builtin.file:
+        path: "{{ postgresql_data_dir }}"
+        state: absent
+
+    - name: Take a base backup from the primary
+      ansible.builtin.command: >-
+        {{ postgresql_bin_dir }}/pg_basebackup
+        -h {{ postgresql_primary_host }} -p {{ postgresql_port }}
+        -U {{ postgresql_replication_user }}
+        -D {{ postgresql_data_dir }}
+        -S {{ postgresql_replication_slot }}
+        -X stream -R
+      environment:
+        PGPASSWORD: "{{ postgresql_replication_password }}"
+        PGSSLMODE: require
+      become: true
+      become_user: postgres
+      changed_when: true
+      no_log: true
+
+- name: Start PostgreSQL as a standby
+  ansible.builtin.systemd:
+    name: "{{ postgresql_service }}"
+    state: started
+    enabled: true

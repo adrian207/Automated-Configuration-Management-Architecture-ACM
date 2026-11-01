@@ -1,0 +1,80 @@
+---
+# Node Exporter Role - install the binary and run it as a systemd service
+# Author: Adrian Johnson <adrian207@gmail.com>
+
+- name: Create node_exporter user
+  ansible.builtin.user:
+    name: node_exporter
+    shell: /bin/false
+    system: true
+    create_home: false
+
+- name: Check installed Node Exporter version
+  ansible.builtin.command: /usr/local/bin/node_exporter --version
+  register: node_exporter_installed
+  changed_when: false
+  failed_when: false
+
+- name: Download and install Node Exporter
+  when: node_exporter_version not in (node_exporter_installed.stderr | default('') + node_exporter_installed.stdout | default(''))
+  block:
+    - name: Download Node Exporter
+      ansible.builtin.unarchive:
+        src: "{{ node_exporter_url }}"
+        dest: /tmp
+        remote_src: true
+
+    - name: Install Node Exporter binary
+      ansible.builtin.copy:
+        src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-{{ node_exporter_arch }}/node_exporter"
+        dest: /usr/local/bin/node_exporter
+        mode: '0755'
+        owner: root
+        group: root
+        remote_src: true
+      notify: Restart node_exporter
+
+    - name: Remove download
+      ansible.builtin.file:
+        path: "/tmp/node_exporter-{{ node_exporter_version }}.linux-{{ node_exporter_arch }}"
+        state: absent
+
+- name: Create Node Exporter systemd service
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Prometheus Node Exporter
+      Documentation=https://prometheus.io/docs/guides/node-exporter/
+      After=network-online.target
+
+      [Service]
+      Type=simple
+      User=node_exporter
+      Group=node_exporter
+      ExecStart=/usr/local/bin/node_exporter \
+        --web.listen-address=:{{ node_exporter_port }} \
+        --collector.systemd \
+        --collector.processes
+      Restart=on-failure
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/node_exporter.service
+    mode: '0644'
+  notify: Restart node_exporter
+
+- name: Enable and start Node Exporter
+  ansible.builtin.systemd:
+    name: node_exporter
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Open firewall for Node Exporter
+  ansible.posix.firewalld:
+    port: "{{ node_exporter_port }}/tcp"
+    permanent: true
+    state: enabled
+    immediate: true
+  when: ansible_os_family == 'RedHat'

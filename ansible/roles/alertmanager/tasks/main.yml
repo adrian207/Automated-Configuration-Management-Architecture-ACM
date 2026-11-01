@@ -1,0 +1,105 @@
+---
+# Alertmanager Role - install Alertmanager and route alerts from Prometheus
+# Author: Adrian Johnson <adrian207@gmail.com>
+
+- name: Create alertmanager user
+  ansible.builtin.user:
+    name: alertmanager
+    shell: /bin/false
+    system: true
+    create_home: false
+
+- name: Create Alertmanager directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: alertmanager
+    group: alertmanager
+    mode: '0750'
+  loop:
+    - "{{ alertmanager_config_dir }}"
+    - "{{ alertmanager_data_dir }}"
+
+- name: Check installed Alertmanager version
+  ansible.builtin.command: /usr/local/bin/alertmanager --version
+  register: alertmanager_installed
+  changed_when: false
+  failed_when: false
+
+- name: Install Alertmanager {{ alertmanager_version }}
+  when: alertmanager_version not in (alertmanager_installed.stdout | default('') + alertmanager_installed.stderr | default(''))
+  vars:
+    alertmanager_dir: "/tmp/alertmanager-{{ alertmanager_version }}.linux-{{ alertmanager_arch }}"
+  block:
+    - name: Download Alertmanager
+      ansible.builtin.unarchive:
+        src: "{{ alertmanager_url }}"
+        dest: /tmp
+        remote_src: true
+
+    - name: Install Alertmanager binaries
+      ansible.builtin.copy:
+        src: "{{ alertmanager_dir }}/{{ item }}"
+        dest: "/usr/local/bin/{{ item }}"
+        mode: '0755'
+        remote_src: true
+      loop:
+        - alertmanager
+        - amtool
+      notify: Restart alertmanager
+
+    - name: Remove download
+      ansible.builtin.file:
+        path: "{{ alertmanager_dir }}"
+        state: absent
+
+- name: Write Alertmanager configuration
+  ansible.builtin.template:
+    src: alertmanager.yml.j2
+    dest: "{{ alertmanager_config_dir }}/alertmanager.yml"
+    owner: alertmanager
+    group: alertmanager
+    mode: '0640'
+    validate: /usr/local/bin/amtool check-config %s
+  notify: Reload alertmanager
+
+- name: Create Alertmanager systemd service
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Prometheus Alertmanager
+      Documentation=https://prometheus.io/docs/alerting/latest/alertmanager/
+      After=network-online.target
+
+      [Service]
+      Type=simple
+      User=alertmanager
+      Group=alertmanager
+      ExecStart=/usr/local/bin/alertmanager \
+        --config.file={{ alertmanager_config_dir }}/alertmanager.yml \
+        --storage.path={{ alertmanager_data_dir }} \
+        --web.listen-address=0.0.0.0:{{ alertmanager_port }}
+      ExecReload=/bin/kill -HUP $MAINPID
+      Restart=on-failure
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/alertmanager.service
+    mode: '0644'
+  notify: Restart alertmanager
+
+- name: Enable and start Alertmanager
+  ansible.builtin.systemd:
+    name: alertmanager
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Open firewall for Alertmanager
+  ansible.posix.firewalld:
+    port: "{{ alertmanager_port }}/tcp"
+    permanent: true
+    state: enabled
+    immediate: true
+  when: ansible_os_family == 'RedHat'

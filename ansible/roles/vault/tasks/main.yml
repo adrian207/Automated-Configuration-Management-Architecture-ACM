@@ -1,0 +1,95 @@
+---
+# Vault Role - install Vault and configure a Raft cluster node
+# Author: Adrian Johnson <adrian207@gmail.com>
+
+- name: Install unzip
+  ansible.builtin.package:
+    name: unzip
+    state: present
+
+- name: Create vault user
+  ansible.builtin.user:
+    name: vault
+    system: true
+    shell: /bin/false
+    home: /opt/vault
+    create_home: false
+
+- name: Create Vault directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: vault
+    group: vault
+    mode: '0750'
+  loop:
+    - /opt/vault
+    - "{{ vault_data_dir }}"
+    - "{{ vault_config_dir }}"
+
+- name: Check installed Vault version
+  ansible.builtin.command: "{{ vault_bin }} version"
+  register: vault_installed
+  changed_when: false
+  failed_when: false
+
+- name: Install Vault {{ vault_version }}
+  when: ('v' + vault_version) not in (vault_installed.stdout | default(''))
+  block:
+    - name: Download Vault
+      ansible.builtin.unarchive:
+        src: "https://releases.hashicorp.com/vault/{{ vault_version }}/vault_{{ vault_version }}_linux_{{ vault_arch }}.zip"
+        dest: "{{ vault_bin | dirname }}"
+        remote_src: true
+        mode: '0755'
+        owner: root
+        group: root
+      notify: Restart vault
+
+- name: Write Vault configuration
+  ansible.builtin.template:
+    src: vault.hcl.j2
+    dest: "{{ vault_config_dir }}/vault.hcl"
+    owner: vault
+    group: vault
+    mode: '0640'
+  notify: Restart vault
+
+- name: Write Vault systemd unit
+  ansible.builtin.template:
+    src: vault.service.j2
+    dest: /etc/systemd/system/vault.service
+    mode: '0644'
+  notify: Restart vault
+
+- name: Set VAULT_ADDR for shell users
+  ansible.builtin.copy:
+    content: "export VAULT_ADDR={{ vault_scheme }}://127.0.0.1:{{ vault_api_port }}\n"
+    dest: /etc/profile.d/vault.sh
+    mode: '0644'
+
+- name: Open firewall for Vault
+  ansible.posix.firewalld:
+    port: "{{ item }}/tcp"
+    permanent: true
+    state: enabled
+    immediate: true
+  loop:
+    - "{{ vault_api_port }}"
+    - "{{ vault_cluster_port }}"
+  when: ansible_os_family == 'RedHat'
+
+- name: Enable and start Vault
+  ansible.builtin.systemd:
+    name: vault
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Apply configuration changes before continuing
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for the Vault API
+  ansible.builtin.wait_for:
+    port: "{{ vault_api_port }}"
+    timeout: 60

@@ -1,7 +1,7 @@
 ---
 # Management Tier Deployment Playbook
 # Author: Adrian Johnson <adrian207@gmail.com>
-# Description: Deploys and configures Vault cluster, DSC pull servers, and AWX
+# Description: Deploys and configures the Vault cluster, DSC pull servers, and AWX
 
 - name: Deploy and Configure HashiCorp Vault Cluster
   hosts: vault_cluster
@@ -14,75 +14,94 @@
     - vault
 
 - name: Initialize Vault Cluster
-  hosts: vault-01.{{ domain }}
+  hosts: vault_cluster[0]
   become: true
+  tags:
+    - vault
+  vars:
+    vault_init_file: /opt/vault/vault-init-keys.json
   tasks:
-    - name: Check if Vault is already initialized
-      uri:
-        url: "http://localhost:8200/v1/sys/health"
+    - name: Check Vault health
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:8200/v1/sys/health"
         method: GET
-        status_code: [200, 429, 501, 503]
+        status_code: [200, 429, 472, 473, 501, 503]
       register: vault_health
-      ignore_errors: true
 
     - name: Initialize Vault
-      command: vault operator init -key-shares=5 -key-threshold=3 -format=json
+      ansible.builtin.command: vault operator init -key-shares=5 -key-threshold=3 -format=json
       environment:
         VAULT_ADDR: "http://127.0.0.1:8200"
       register: vault_init_output
       when: vault_health.status == 501
+      changed_when: true
+      no_log: true
 
+    # Lab convenience: keys are stored on the first node (root-only). In production,
+    # distribute the unseal keys to key holders or use auto-unseal with Azure Key Vault.
     - name: Save Vault init output
-      copy:
+      ansible.builtin.copy:
         content: "{{ vault_init_output.stdout }}"
-        dest: "/opt/vault/vault-init-keys.json"
+        dest: "{{ vault_init_file }}"
         mode: '0600'
-        owner: vault
-        group: vault
-      when: vault_init_output is changed
-
-    - name: Parse unseal keys
-      set_fact:
-        vault_unseal_keys: "{{ (vault_init_output.stdout | from_json).unseal_keys_b64 }}"
-        vault_root_token: "{{ (vault_init_output.stdout | from_json).root_token }}"
-      when: vault_init_output is changed
+        owner: root
+        group: root
+      when: vault_health.status == 501
       no_log: true
 
 - name: Unseal Vault Cluster
   hosts: vault_cluster
   become: true
+  serial: 1
+  tags:
+    - vault
+  vars:
+    vault_init_file: /opt/vault/vault-init-keys.json
+    vault_leader: "{{ groups['vault_cluster'][0] }}"
   tasks:
+    - name: Read unseal keys from the first node
+      ansible.builtin.slurp:
+        src: "{{ vault_init_file }}"
+      delegate_to: "{{ vault_leader }}"
+      register: vault_init_raw
+      no_log: true
+
     - name: Check Vault seal status
-      uri:
-        url: "http://localhost:8200/v1/sys/seal-status"
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:8200/v1/sys/seal-status"
         method: GET
       register: seal_status
 
-    - name: Unseal Vault (key 1)
-      command: vault operator unseal {{ hostvars['vault-01.' + domain]['vault_unseal_keys'][0] }}
-      environment:
-        VAULT_ADDR: "http://127.0.0.1:8200"
+    - name: Unseal Vault with the threshold number of keys
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:8200/v1/sys/unseal"
+        method: PUT
+        body_format: json
+        body:
+          key: "{{ item }}"
+      loop: "{{ ((vault_init_raw.content | b64decode | from_json).unseal_keys_b64)[:3] }}"
       when: seal_status.json.sealed
       no_log: true
 
-    - name: Unseal Vault (key 2)
-      command: vault operator unseal {{ hostvars['vault-01.' + domain]['vault_unseal_keys'][1] }}
-      environment:
-        VAULT_ADDR: "http://127.0.0.1:8200"
-      when: seal_status.json.sealed
-      no_log: true
-
-    - name: Unseal Vault (key 3)
-      command: vault operator unseal {{ hostvars['vault-01.' + domain]['vault_unseal_keys'][2] }}
-      environment:
-        VAULT_ADDR: "http://127.0.0.1:8200"
-      when: seal_status.json.sealed
-      no_log: true
+    - name: Wait until this node is unsealed and part of the cluster
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:8200/v1/sys/health"
+        method: GET
+        status_code: [200, 429]
+      register: node_health
+      until: node_health.status in [200, 429]
+      retries: 30
+      delay: 5
 
 - name: Deploy DSC Pull Servers (Windows)
   hosts: dsc_pull_servers
+  tags:
+    - dsc
+  vars:
+    dsc_service_path: C:\Program Files\WindowsPowerShell\DscService
+    dsc_source_path: C:\DSC\source
   tasks:
-    - name: Install DSC Pull Server
+    - name: Install DSC service and IIS
       ansible.windows.win_feature:
         name:
           - DSC-Service
@@ -91,6 +110,17 @@
         state: present
         include_management_tools: true
 
+    - name: Install xPSDesiredStateConfiguration module
+      community.windows.win_psmodule:
+        name: xPSDesiredStateConfiguration
+        state: present
+
+    - name: Write the registration key file
+      ansible.windows.win_copy:
+        content: "{{ dsc_registration_key }}"
+        dest: "{{ dsc_service_path }}\\RegistrationKeys.txt"
+      no_log: true
+
     - name: Configure DSC Pull Server
       ansible.windows.win_dsc:
         resource_name: xDSCWebService
@@ -98,13 +128,36 @@
         Port: 8080
         PhysicalPath: C:\inetpub\PSDSCPullServer
         CertificateThumbPrint: AllowUnencryptedTraffic
-        ModulePath: C:\Program Files\WindowsPowerShell\DscService\Modules
-        ConfigurationPath: C:\Program Files\WindowsPowerShell\DscService\Configuration
+        ModulePath: "{{ dsc_service_path }}\\Modules"
+        ConfigurationPath: "{{ dsc_service_path }}\\Configuration"
+        RegistrationKeyPath: "{{ dsc_service_path }}"
         State: Started
         UseSecurityBestPractices: false
 
-- name: Deploy AWX/Ansible Tower
-  hosts: awx-01.{{ domain }}
+    - name: Allow pull server traffic
+      community.windows.win_firewall_rule:
+        name: DSC Pull Server (TCP 8080)
+        localport: 8080
+        protocol: tcp
+        direction: in
+        action: allow
+        state: present
+        enabled: true
+
+    - name: Copy DSC configurations and scripts
+      ansible.windows.win_copy:
+        src: "{{ playbook_dir }}/../../dsc/"
+        dest: "{{ dsc_source_path }}\\"
+
+    - name: Compile and publish configurations and resource modules
+      ansible.windows.win_shell: >-
+        & '{{ dsc_source_path }}\Publish-DscConfigurations.ps1'
+        -Environment {{ env_name | capitalize }}
+      register: dsc_publish
+      changed_when: "'published' in dsc_publish.stdout"
+
+- name: Deploy AWX
+  hosts: awx_servers
   become: true
   roles:
     - common
@@ -112,5 +165,3 @@
     - awx
   tags:
     - awx
-
-

@@ -3,14 +3,14 @@
 
 terraform {
   required_version = ">= 1.5.0"
-  
+
   backend "azurerm" {
     resource_group_name  = "rg-terraform-state"
     storage_account_name = "stterraformstate"
     container_name       = "tfstate"
     # key is set via -backend-config in CI/CD
   }
-  
+
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
@@ -24,12 +24,12 @@ provider "azurerm" {
     resource_group {
       prevent_deletion_if_contains_resources = false
     }
-    
+
     key_vault {
       purge_soft_delete_on_destroy    = true
       recover_soft_deleted_key_vaults = true
     }
-    
+
     virtual_machine {
       delete_os_disk_on_deletion     = true
       graceful_shutdown              = false
@@ -41,26 +41,32 @@ provider "azurerm" {
 # Azure Infrastructure Module
 module "azure_infrastructure" {
   source = "../../modules/azure"
-  
-  environment          = "dev"
-  location             = var.location
-  resource_group_name  = "rg-dev-configmgmt"
-  vnet_address_space   = ["10.10.0.0/16"]
-  subnet_management    = "10.10.10.0/24"
-  subnet_monitoring    = "10.10.20.0/24"
-  subnet_data          = "10.10.30.0/24"
-  subnet_nodes         = "10.10.100.0/22"
-  
-  vault_node_count     = 3
-  vm_size_vault        = "Standard_D2s_v3"
-  vm_size_monitoring   = "Standard_D2s_v3"
-  
-  admin_username       = var.admin_username
-  ssh_public_key_path  = var.ssh_public_key_path
-  
-  enable_backup        = false  # Disable backups in dev
-  enable_monitoring    = true
-  
+
+  environment         = "dev"
+  location            = var.location
+  resource_group_name = "rg-dev-configmgmt"
+  vnet_address_space  = ["10.10.0.0/16"]
+  subnet_management   = "10.10.10.0/24"
+  subnet_monitoring   = "10.10.20.0/24"
+  subnet_data         = "10.10.30.0/24"
+  subnet_nodes        = "10.10.100.0/22"
+
+  vault_node_count   = 3
+  vm_size_vault      = "Standard_D2s_v3"
+  vm_size_monitoring = "Standard_D2s_v3"
+
+  admin_username         = var.admin_username
+  ssh_public_key_path    = var.ssh_public_key_path
+  windows_admin_password = var.windows_admin_password
+
+  dsc_node_count      = 2
+  postgres_node_count = 2
+  linux_node_count    = 0 # set above 0 to create RHEL managed nodes
+  windows_node_count  = 0 # set above 0 to create Windows managed nodes
+
+  enable_backup     = false # Disable backups in dev
+  enable_monitoring = true
+
   tags = {
     environment = "dev"
     project     = "config-management"
@@ -103,3 +109,31 @@ output "key_vault_uri" {
 }
 
 
+
+output "dsc_pull_server_ips" {
+  description = "Private IP addresses of the DSC pull servers"
+  value       = module.azure_infrastructure.dsc_pull_server_ips
+}
+
+output "awx_ip" {
+  description = "Private IP address of the AWX VM"
+  value       = module.azure_infrastructure.awx_ip
+}
+
+output "alertmanager_ip" {
+  description = "Private IP address of Alertmanager"
+  value       = module.azure_infrastructure.alertmanager_ip
+}
+
+output "postgres_ips" {
+  description = "Private IP addresses of the PostgreSQL VMs (first is the primary)"
+  value       = module.azure_infrastructure.postgres_ips
+}
+
+output "managed_node_ips" {
+  description = "Private IP addresses of the managed nodes"
+  value = {
+    linux   = module.azure_infrastructure.linux_node_ips
+    windows = module.azure_infrastructure.windows_node_ips
+  }
+}

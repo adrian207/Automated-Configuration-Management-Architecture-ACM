@@ -1,0 +1,99 @@
+---
+# AWX Role - single-node k3s, AWX Operator and an AWX instance
+# Author: Adrian Johnson <adrian207@gmail.com>
+
+- name: Check for k3s
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: awx_k3s_binary
+
+- name: Install k3s
+  when: not awx_k3s_binary.stat.exists
+  block:
+    - name: Download the k3s installer
+      ansible.builtin.get_url:
+        url: https://get.k3s.io
+        dest: /tmp/k3s-install.sh
+        mode: '0755'
+
+    - name: Run the k3s installer
+      ansible.builtin.command: /tmp/k3s-install.sh --write-kubeconfig-mode 644
+      environment:
+        INSTALL_K3S_VERSION: "{{ awx_k3s_version }}"
+      changed_when: true
+
+- name: Wait for the k3s node to be Ready
+  ansible.builtin.command: "{{ awx_kubectl }} wait --for=condition=Ready node --all --timeout=300s"
+  changed_when: false
+
+- name: Create AWX working directory
+  ansible.builtin.file:
+    path: "{{ awx_work_dir }}"
+    state: directory
+    mode: '0750'
+
+- name: Write AWX Operator kustomization
+  ansible.builtin.template:
+    src: kustomization.yaml.j2
+    dest: "{{ awx_work_dir }}/kustomization.yaml"
+    mode: '0640'
+
+- name: Install the AWX Operator
+  ansible.builtin.command: "{{ awx_kubectl }} apply -k {{ awx_work_dir }}"
+  register: awx_operator_apply
+  changed_when: "'created' in awx_operator_apply.stdout or 'configured' in awx_operator_apply.stdout"
+
+- name: Wait for the AWX Operator
+  ansible.builtin.command: >-
+    {{ awx_kubectl }} -n {{ awx_namespace }} rollout status
+    deployment/awx-operator-controller-manager --timeout=600s
+  changed_when: false
+
+- name: Create the admin password secret
+  when: awx_admin_password | length > 0
+  ansible.builtin.shell: |
+    set -o pipefail
+    {{ awx_kubectl }} -n {{ awx_namespace }} create secret generic {{ awx_instance_name }}-admin-password \
+      --from-literal=password="$AWX_ADMIN_PASSWORD" --dry-run=client -o yaml | {{ awx_kubectl }} apply -f -
+  args:
+    executable: /bin/bash
+  environment:
+    AWX_ADMIN_PASSWORD: "{{ awx_admin_password }}"
+  register: awx_secret
+  changed_when: "'created' in awx_secret.stdout or 'configured' in awx_secret.stdout"
+  no_log: true
+
+- name: Write the AWX instance definition
+  ansible.builtin.template:
+    src: awx.yaml.j2
+    dest: "{{ awx_work_dir }}/awx.yaml"
+    mode: '0640'
+
+- name: Create the AWX instance
+  ansible.builtin.command: "{{ awx_kubectl }} apply -f {{ awx_work_dir }}/awx.yaml"
+  register: awx_apply
+  changed_when: "'created' in awx_apply.stdout or 'configured' in awx_apply.stdout"
+
+- name: Open firewall for the AWX web UI
+  ansible.posix.firewalld:
+    port: "{{ awx_nodeport }}/tcp"
+    permanent: true
+    state: enabled
+    immediate: true
+  when: ansible_os_family == 'RedHat'
+
+- name: Wait for AWX to answer (first deployment takes several minutes)
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ awx_nodeport }}/api/v2/ping/"
+    status_code: 200
+  register: awx_ping
+  until: awx_ping.status == 200
+  retries: 60
+  delay: 20
+
+- name: Show how to sign in
+  ansible.builtin.debug:
+    msg: >-
+      AWX is at http://{{ ansible_host }}:{{ awx_nodeport }} (user {{ awx_admin_user }}).
+      {% if awx_admin_password | length == 0 %}Password:
+      kubectl -n {{ awx_namespace }} get secret {{ awx_instance_name }}-admin-password -o jsonpath='{.data.password}' | base64 -d{% endif %}

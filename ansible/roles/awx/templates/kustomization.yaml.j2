@@ -1,0 +1,9 @@
+# AWX Operator - Managed by Ansible
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: {{ awx_namespace }}
+resources:
+  - github.com/ansible/awx-operator/config/default?ref={{ awx_operator_version }}
+images:
+  - name: quay.io/ansible/awx-operator
+    newTag: "{{ awx_operator_version }}"

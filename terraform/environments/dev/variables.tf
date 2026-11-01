@@ -20,3 +20,9 @@ variable "ssh_public_key_path" {
 }
 
 
+
+variable "windows_admin_password" {
+  description = "Local administrator password for the Windows VMs (DSC pull servers, Windows nodes)"
+  type        = string
+  sensitive   = true
+}

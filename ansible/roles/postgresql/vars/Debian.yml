@@ -1,0 +1,9 @@
+---
+postgresql_packages:
+  - "postgresql-{{ postgresql_version }}"
+  - python3-psycopg2
+  - acl
+postgresql_service: postgresql
+postgresql_conf_dir: "/etc/postgresql/{{ postgresql_version }}/main"
+postgresql_data_dir: "/var/lib/postgresql/{{ postgresql_version }}/main"
+postgresql_bin_dir: "/usr/lib/postgresql/{{ postgresql_version }}/bin"

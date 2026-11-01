@@ -10,18 +10,19 @@
     - vault
     - dsc
 
+- name: Deploy Data Tier Infrastructure
+  import_playbook: data-tier.yml
+  tags:
+    - data
+    - postgres
+
+# Grafana keeps its data in PostgreSQL, so the data tier comes first
 - name: Deploy Monitoring Tier Infrastructure
   import_playbook: monitoring-tier.yml
   tags:
     - monitoring
     - prometheus
     - grafana
-
-- name: Deploy Data Tier Infrastructure
-  import_playbook: data-tier.yml
-  tags:
-    - data
-    - postgres
 
 - name: Configure Linux Managed Nodes
   import_playbook: configure-linux-nodes.yml
@@ -46,5 +47,3 @@
   tags:
     - validate
     - test
-
-

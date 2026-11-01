@@ -20,16 +20,16 @@
     name: grafana
     description: Grafana Repository
     baseurl: https://rpm.grafana.com
-    gpgcheck: yes
+    gpgcheck: true
     gpgkey: https://rpm.grafana.com/gpg.key
-    enabled: yes
+    enabled: true
   when: ansible_os_family == 'RedHat'
 
 - name: Install Grafana
   ansible.builtin.package:
     name: grafana
     state: present
-    update_cache: yes
+    update_cache: true
 
 - name: Create Grafana directories
   ansible.builtin.file:
@@ -50,7 +50,7 @@
     owner: root
     group: grafana
     mode: '0640'
-  notify: restart grafana
+  notify: Restart grafana
 
 - name: Provision Prometheus datasource
   ansible.builtin.template:
@@ -59,7 +59,7 @@
     owner: root
     group: grafana
     mode: '0640'
-  notify: restart grafana
+  notify: Restart grafana
 
 - name: Provision dashboard configuration
   ansible.builtin.copy:
@@ -89,8 +89,8 @@
     group: grafana
     mode: '0644'
   with_fileglob:
-    - "dashboards/*.json"
-  notify: restart grafana
+    - "{{ grafana_dashboards_src }}/*.json"
+  notify: Restart grafana
 
 - name: Enable and start Grafana
   ansible.builtin.systemd:
@@ -116,5 +116,3 @@
   until: grafana_health.status == 200
   retries: 30
   delay: 2
-
-

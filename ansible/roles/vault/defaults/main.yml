@@ -1,0 +1,19 @@
+---
+# HashiCorp Vault with integrated (Raft) storage
+vault_version: "1.15.4"
+vault_arch: amd64
+vault_bin: /usr/bin/vault
+vault_config_dir: /etc/vault.d
+vault_data_dir: /opt/vault/data
+vault_api_port: 8200
+vault_cluster_port: 8201
+vault_cluster_name: "{{ env_name }}-vault-cluster"
+vault_ui: true
+# Lab default: plain HTTP inside the VNet. For production, set false and provide
+# vault_tls_cert_file / vault_tls_key_file on each node.
+vault_tls_disable: true
+vault_tls_cert_file: "{{ vault_config_dir }}/tls/vault.crt"
+vault_tls_key_file: "{{ vault_config_dir }}/tls/vault.key"
+# Lets Prometheus scrape /v1/sys/metrics without a token
+vault_unauthenticated_metrics: true
+vault_scheme: "{{ 'http' if vault_tls_disable | bool else 'https' }}"

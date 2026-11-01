@@ -1,0 +1,8 @@
+---
+postgresql_packages:
+  - "postgresql{{ postgresql_version }}-server"
+  - python3-psycopg2
+postgresql_service: "postgresql-{{ postgresql_version }}"
+postgresql_conf_dir: "/var/lib/pgsql/{{ postgresql_version }}/data"
+postgresql_data_dir: "/var/lib/pgsql/{{ postgresql_version }}/data"
+postgresql_bin_dir: "/usr/pgsql-{{ postgresql_version }}/bin"

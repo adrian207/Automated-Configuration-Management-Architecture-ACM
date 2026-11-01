@@ -75,3 +75,33 @@ output "nsg_ids" {
 }
 
 
+
+output "dsc_pull_server_ips" {
+  description = "Private IP addresses of the DSC pull servers"
+  value       = [for k, nic in azurerm_network_interface.windows : nic.private_ip_address if startswith(k, "dsc-")]
+}
+
+output "awx_ip" {
+  description = "Private IP address of the AWX VM"
+  value       = try(azurerm_network_interface.service["awx"].private_ip_address, null)
+}
+
+output "alertmanager_ip" {
+  description = "Private IP address of Alertmanager"
+  value       = azurerm_network_interface.service["alertmanager"].private_ip_address
+}
+
+output "postgres_ips" {
+  description = "Private IP addresses of the PostgreSQL VMs (first is the primary)"
+  value       = [for k, nic in azurerm_network_interface.service : nic.private_ip_address if startswith(k, "postgres-")]
+}
+
+output "linux_node_ips" {
+  description = "Private IP addresses of the RHEL managed nodes"
+  value       = azurerm_network_interface.linux_node[*].private_ip_address
+}
+
+output "windows_node_ips" {
+  description = "Private IP addresses of the Windows managed nodes"
+  value       = [for k, nic in azurerm_network_interface.windows : nic.private_ip_address if startswith(k, "winnode-")]
+}

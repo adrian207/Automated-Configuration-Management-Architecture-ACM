@@ -1,0 +1,26 @@
+---
+# Secrets used by the playbooks. Copy to vaulted.yml in the same folder, set real values,
+# and encrypt it:
+#   cp vaulted.yml.example vaulted.yml
+#   ansible-vault encrypt vaulted.yml
+# Run playbooks with --ask-vault-pass (or --vault-password-file).
+
+# Grafana (monitoring tier)
+grafana_admin_password: "change-me"
+grafana_secret_key: "change-me-long-random-string"
+grafana_db_password: "change-me"        # Grafana's PostgreSQL user
+
+# PostgreSQL (data tier)
+postgresql_replication_password: "change-me"
+postgres_exporter_password: "change-me"
+
+# Windows local administrator (same value as windows_admin_password in terraform.tfvars)
+windows_admin_password: "change-me"
+
+# DSC pull server registration key (any GUID, e.g. from New-Guid)
+dsc_registration_key: "00000000-0000-0000-0000-000000000000"
+
+# Optional
+awx_admin_password: ""                  # empty = let the AWX operator generate one
+alertmanager_smtp_password: ""
+smtp_password: ""                       # Grafana SMTP, only if grafana_smtp_enabled

@@ -1,0 +1,15 @@
+---
+# AWX runs on a single-node k3s cluster through the AWX Operator, which is how the
+# AWX project supports installation.
+awx_operator_version: "2.19.1"
+awx_namespace: awx
+awx_instance_name: awx
+awx_nodeport: 30080
+awx_admin_user: admin
+# Leave empty to let the operator generate a password (stored in the
+# <instance>-admin-password secret); set it from Ansible Vault to choose one.
+awx_admin_password: ""
+# Empty = current k3s stable release
+awx_k3s_version: ""
+awx_work_dir: /opt/awx
+awx_kubectl: /usr/local/bin/kubectl

@@ -1,0 +1,108 @@
+---
+# Deployment Validation Playbook
+# Author: Adrian Johnson <adrian207@gmail.com>
+# Description: Checks that every service answers and is healthy. Read-only.
+
+- name: Validate Vault
+  hosts: vault_cluster
+  gather_facts: false
+  tags: [validate, test]
+  tasks:
+    - name: Vault is initialised, unsealed and active or standby
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:8200/v1/sys/health"
+        status_code: [200, 429]
+      delegate_to: localhost
+
+- name: Validate PostgreSQL replication
+  hosts: postgresql_cluster
+  become: true
+  gather_facts: false
+  tags: [validate, test]
+  tasks:
+    - name: Count streaming replicas on the primary
+      community.postgresql.postgresql_query:
+        query: "SELECT count(*) AS replicas FROM pg_stat_replication WHERE state = 'streaming'"
+      become: true
+      become_user: postgres
+      register: replication
+      when: postgresql_role == 'primary'
+
+    - name: Every replica is streaming
+      ansible.builtin.assert:
+        that:
+          - replication.query_result[0].replicas | int == expected
+        fail_msg: "{{ replication.query_result[0].replicas }} of {{ expected }} replicas are streaming"
+      vars:
+        expected: "{{ groups['postgresql_cluster'] | map('extract', hostvars) | selectattr('postgresql_role', 'equalto', 'replica') | list | length }}"
+      when: postgresql_role == 'primary'
+
+- name: Validate monitoring
+  hosts: localhost
+  gather_facts: false
+  tags: [validate, test]
+  vars:
+    prometheus: "{{ hostvars[groups['prometheus_servers'][0]]['ansible_host'] }}"
+    grafana: "{{ hostvars[groups['grafana_servers'][0]]['ansible_host'] }}"
+    alertmanager: "{{ hostvars[groups['alertmanager_servers'][0]]['ansible_host'] }}"
+  tasks:
+    - name: Prometheus is ready
+      ansible.builtin.uri:
+        url: "http://{{ prometheus }}:9090/-/ready"
+
+    - name: Get Prometheus targets
+      ansible.builtin.uri:
+        url: "http://{{ prometheus }}:9090/api/v1/targets?state=active"
+        return_content: true
+      register: targets
+
+    - name: Report targets that are down
+      ansible.builtin.debug:
+        msg: "{{ down | length }} of {{ targets.json.data.activeTargets | length }} targets down: {{ down | map(attribute='scrapeUrl') | list }}"
+      vars:
+        down: "{{ targets.json.data.activeTargets | rejectattr('health', 'equalto', 'up') | list }}"
+
+    - name: Grafana is healthy and connected to its database
+      ansible.builtin.uri:
+        url: "http://{{ grafana }}:3000/api/health"
+        return_content: true
+      register: grafana_health
+      failed_when: grafana_health.json.database != 'ok'
+
+    - name: Alertmanager is ready
+      ansible.builtin.uri:
+        url: "http://{{ alertmanager }}:9093/-/ready"
+
+- name: Validate AWX
+  hosts: awx_servers
+  gather_facts: false
+  tags: [validate, test]
+  tasks:
+    - name: AWX API answers
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:{{ awx_nodeport | default(30080) }}/api/v2/ping/"
+      delegate_to: localhost
+
+- name: Validate DSC pull servers
+  hosts: dsc_pull_servers
+  gather_facts: false
+  tags: [validate, test]
+  tasks:
+    - name: Pull server endpoint answers
+      ansible.windows.win_uri:
+        url: http://localhost:8080/PSDSCPullServer.svc
+        status_code: 200
+
+- name: Validate Windows nodes
+  hosts: windows_nodes
+  gather_facts: false
+  tags: [validate, test]
+  tasks:
+    - name: Node is in pull mode and its last configuration run succeeded
+      ansible.windows.win_shell: |
+        $lcm = Get-DscLocalConfigurationManager
+        $last = Get-DscConfigurationStatus -ErrorAction SilentlyContinue
+        "$($lcm.RefreshMode)|$($last.Status)"
+      register: dsc_state
+      changed_when: false
+      failed_when: (dsc_state.stdout | trim).split('|')[0] != 'Pull' or (dsc_state.stdout | trim).split('|')[1] == 'Failure'

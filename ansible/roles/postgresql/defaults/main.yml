@@ -1,0 +1,29 @@
+---
+# PostgreSQL primary/replica pair with streaming replication
+postgresql_version: "15"
+postgresql_max_connections: 200
+postgresql_port: 5432
+# Networks allowed to connect (pg_hba.conf). Defaults: the data, monitoring and management subnets.
+postgresql_replication_network: "{{ hostvars[inventory_hostname]['subnet'] | default('10.10.30.0/24') }}"
+postgresql_client_networks:
+  - "{{ hostvars[groups['grafana_servers'][0]]['subnet'] | default('10.10.20.0/24') }}"
+# Users (passwords come from the vault-encrypted secrets file)
+postgresql_replication_user: replicator
+postgresql_exporter_user: postgres_exporter
+postgresql_databases:
+  - name: grafana
+    owner: grafana
+    password: "{{ grafana_db_password }}"
+# postgres_exporter on every node (port 9187)
+postgresql_exporter_version: "0.15.0"
+postgresql_exporter_arch: amd64
+postgresql_exporter_port: 9187
+postgresql_exporter_release: "https://github.com/prometheus-community/postgres_exporter/releases/download/v{{ postgresql_exporter_version }}"
+postgresql_exporter_url: "{{ postgresql_exporter_release }}/postgres_exporter-{{ postgresql_exporter_version }}.linux-{{ postgresql_exporter_arch }}.tar.gz"
+# Inventory names of the primary and the replicas, from postgresql_role in the inventory
+postgresql_primary_name: >-
+  {{ groups['postgresql_cluster'] | map('extract', hostvars)
+     | selectattr('postgresql_role', 'equalto', 'primary') | map(attribute='inventory_hostname') | first }}
+postgresql_replica_names: >-
+  {{ groups['postgresql_cluster'] | map('extract', hostvars)
+     | selectattr('postgresql_role', 'equalto', 'replica') | map(attribute='inventory_hostname') | list }}

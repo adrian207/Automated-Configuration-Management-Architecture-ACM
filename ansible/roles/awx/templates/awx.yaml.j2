@@ -1,0 +1,13 @@
+# AWX instance - Managed by Ansible
+apiVersion: awx.ansible.com/v1beta1
+kind: AWX
+metadata:
+  name: {{ awx_instance_name }}
+  namespace: {{ awx_namespace }}
+spec:
+  service_type: nodeport
+  nodeport_port: {{ awx_nodeport }}
+  admin_user: {{ awx_admin_user }}
+{% if awx_admin_password | length > 0 %}
+  admin_password_secret: {{ awx_instance_name }}-admin-password
+{% endif %}

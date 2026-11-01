@@ -22,7 +22,7 @@
     - grafana
 
 - name: Deploy Alertmanager
-  hosts: alertmanager-01.{{ domain }}
+  hosts: alertmanager_servers
   become: true
   roles:
     - common
@@ -30,22 +30,8 @@
   tags:
     - alertmanager
 
-- name: Configure Grafana Data Sources
-  hosts: grafana_servers
-  become: true
-  tasks:
-    - name: Add Prometheus data source to Grafana
-      community.grafana.grafana_datasource:
-        name: Prometheus
-        ds_type: prometheus
-        ds_url: "http://{{ hostvars['prometheus-01.' + domain]['ansible_host'] }}:9090"
-        access: proxy
-        is_default: true
-        grafana_url: "http://localhost:3000"
-        grafana_user: "{{ grafana_admin_user }}"
-        grafana_password: "{{ grafana_admin_password }}"
-        state: present
-
+# The Prometheus datasource and the dashboards in monitoring/grafana/dashboards are
+# provisioned by the grafana role; these two come from grafana.com.
 - name: Import Grafana Dashboards
   hosts: grafana_servers
   become: true
@@ -61,16 +47,6 @@
         dashboard_id: 1860
         dashboard_revision: 27
 
-    - name: Import Vault dashboard
-      community.grafana.grafana_dashboard:
-        grafana_url: "http://localhost:3000"
-        grafana_user: "{{ grafana_admin_user }}"
-        grafana_password: "{{ grafana_admin_password }}"
-        state: present
-        commit_message: "Import Vault dashboard"
-        overwrite: true
-        path: "/opt/grafana/dashboards/vault-dashboard.json"
-
     - name: Import PostgreSQL dashboard
       community.grafana.grafana_dashboard:
         grafana_url: "http://localhost:3000"
@@ -81,5 +57,3 @@
         overwrite: true
         dashboard_id: 9628
         dashboard_revision: 7
-
-

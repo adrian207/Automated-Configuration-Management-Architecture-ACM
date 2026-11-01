@@ -1,0 +1,28 @@
+---
+- name: Install the PostgreSQL (PGDG) repository
+  ansible.builtin.dnf:
+    name: "https://download.postgresql.org/pub/repos/yum/reporpms/EL-{{ ansible_distribution_major_version }}-x86_64/pgdg-redhat-repo-latest.noarch.rpm"
+    state: present
+    disable_gpg_check: true
+
+- name: Disable the built-in PostgreSQL module
+  ansible.builtin.command: dnf -qy module disable postgresql
+  register: postgresql_dnf_module
+  changed_when: "'Disabling' in postgresql_dnf_module.stdout"
+
+- name: Install PostgreSQL packages
+  ansible.builtin.dnf:
+    name: "{{ postgresql_packages }}"
+    state: present
+
+- name: Initialise the database cluster
+  ansible.builtin.command: "{{ postgresql_bin_dir }}/postgresql-{{ postgresql_version }}-setup initdb"
+  args:
+    creates: "{{ postgresql_data_dir }}/PG_VERSION"
+  when: postgresql_role == 'primary'
+
+- name: Include conf.d in postgresql.conf
+  ansible.builtin.lineinfile:
+    path: "{{ postgresql_conf_dir }}/postgresql.conf"
+    line: "include_dir = 'conf.d'"
+  when: postgresql_role == 'primary'

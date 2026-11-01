@@ -1,0 +1,43 @@
+---
+# Windows Node Configuration Playbook
+# Author: Adrian Johnson <adrian207@gmail.com>
+# Description: Registers Windows nodes with the DSC pull server so they pull and enforce
+#              their configuration (WindowsBase by default)
+
+- name: Configure Windows Managed Nodes
+  hosts: windows_nodes
+  vars:
+    dsc_configuration_names:
+      - WindowsBase
+    dsc_client_path: C:\DSC
+  tasks:
+    - name: Check WinRM connectivity
+      ansible.windows.win_ping:
+
+    - name: Create the DSC working folder
+      ansible.windows.win_file:
+        path: "{{ dsc_client_path }}"
+        state: directory
+
+    - name: Copy the pull client script
+      ansible.windows.win_copy:
+        src: "{{ playbook_dir }}/../../dsc/Set-DscPullClient.ps1"
+        dest: "{{ dsc_client_path }}\\Set-DscPullClient.ps1"
+
+    - name: Point the Local Configuration Manager at the pull server
+      ansible.windows.win_shell: >-
+        & '{{ dsc_client_path }}\Set-DscPullClient.ps1'
+        -ServerUrl '{{ dsc_pull_server_url }}'
+        -RegistrationKey $env:DSC_REGISTRATION_KEY
+        -ConfigurationNames {{ dsc_configuration_names | join(',') }}
+      environment:
+        DSC_REGISTRATION_KEY: "{{ dsc_registration_key }}"
+      register: lcm_result
+      changed_when: true
+      no_log: true
+
+    - name: Confirm the node is in pull mode
+      ansible.windows.win_shell: (Get-DscLocalConfigurationManager).RefreshMode
+      register: lcm_mode
+      changed_when: false
+      failed_when: lcm_mode.stdout | trim != 'Pull'
